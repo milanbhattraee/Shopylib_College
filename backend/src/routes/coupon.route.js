@@ -5,7 +5,6 @@ import {
   createCoupon,
   getAllCoupons,
   getCouponUsage,
-  getUserCoupons,
   removeCoupon,
   restoreCoupon,
   updateCoupon,
@@ -16,7 +15,6 @@ const router = express.Router();
 
 // Public routes
 router.post("/apply", applyCoupon);
-router.get("/user/:userId", getUserCoupons);
 router.get("/", getAllCoupons);
 
 // Apply admin middleware to all routes below
