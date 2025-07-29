@@ -2,7 +2,9 @@
 import { Router } from "express";
 import {
   createUser,
+  getAllAdmins,
   getUserProfile,
+  updateProfile,
   updateUserAvatar,
   updateUserPermissions,
   updateUserProfile,
@@ -15,15 +17,13 @@ import upload from "../config/multer.js";
 
 const router = Router();
 
-// Public routes (no auth required)
-router.get("/", getUserProfile);
-router.patch("/", updateUserProfile);
-
 router.use(authMiddleware);
 
-// Auth required routes
+router.get("/", getUserProfile);
+router.patch("/", upload.fields([{ name: "avatar", maxCount: 1 }]), updateProfile);
+
 router.patch(
-  "/:userId/updateAvatar",
+  "/updateAvatar",
   upload.fields([{ name: "avatar", maxCount: 1 }]),
   updateUserAvatar
 );
@@ -37,7 +37,8 @@ router.post(
   upload.fields([{ name: "avatar", maxCount: 1 }]),
   createUser
 );
-router.get("/:userId", getUserProfile);
+router.get("/info/:userId", getUserProfile);
+router.get("/admins", getAllAdmins);
 router.patch(
   "/:userId",
   upload.fields([{ name: "avatar", maxCount: 1 }]),

@@ -4,7 +4,6 @@ import crypto from "crypto";
 
 export const authMiddleware = async (req, res, next) => {
   try {
-
     const token = req.cookies.accessToken;
 
     if (!token) {
@@ -42,6 +41,14 @@ export const authMiddleware = async (req, res, next) => {
       return res.status(401).json({
         success: false,
         message: "Invalid token",
+      });
+    }
+
+    if (!authToken.auth.emailVerified) {
+      return res.status(401).json({
+        success: false,
+        status: "Email not verified",
+        message: "Please check your mailbox to verify your email",
       });
     }
 
@@ -127,8 +134,6 @@ export const adminMiddleware = (req, res, next) => {
 // Middleware to check specific permissions
 export const permissionMiddleware = (requiredPermission) => {
   return (req, res, next) => {
-
-
     if (
       req.user.role === "admin" &&
       req.user.permissions.includes(requiredPermission)

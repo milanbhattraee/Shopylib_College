@@ -6,7 +6,81 @@ import { handleError } from "../utils/apiError.js";
 import { sendMail } from "../config/sendEmail.js";
 import { generateStrongPassword } from "../utils/tools.js";
 
-// For self update and also by admin
+export const updateProfile = async (req, res) => {
+  try {
+    const { userId } = req.user;
+
+    const {
+      firstName,
+      lastName,
+      phone,
+      dateOfBirth,
+      gender,
+      province,
+      city,
+      fullAddress,
+    } = req.body;
+
+    let address = null;
+
+    if (province && city && fullAddress) {
+      address = {
+        province: province ? province.trim() : null,
+        city: city ? city.trim() : null,
+        fullAddress: fullAddress ? fullAddress.trim() : null,
+      };
+    }
+
+    let avatar;
+
+    if (req.files && req.files["avatar"]) {
+      for (const file of req.files["avatar"]) {
+        const photo = await photoWork(file);
+        avatar = {
+          blurhash: photo.blurhash,
+          url: photo.secure_url,
+          height: photo.height,
+          width: photo.width,
+        };
+      }
+    }
+
+    const user = await User.findByPk(userId);
+
+    if (!user) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    // Use the updateProfile method from the model
+    user.updateProfile({
+      firstName: firstName ?? user.firstName,
+      lastName: lastName ?? user.lastName,
+      phone: phone ?? user.phone,
+      dateOfBirth: dateOfBirth ?? user.dateOfBirth,
+      gender: gender ?? user.gender,
+      address: address ?? user.address,
+      avatar: avatar ?? user.avatar,
+    });
+
+    await user.save();
+
+    const userResponse = user.toJSON();
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      data: {
+        user: userResponse,
+      },
+    });
+  } catch (error) {
+    handleError(error, res);
+  }
+};
+
+// Update user profile by admin
 export const updateUserProfile = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -94,7 +168,7 @@ export const updateUserProfile = async (req, res) => {
 
 export const updateUserAvatar = async (req, res) => {
   try {
-    const { userId } = req.params;
+    const { userId } = req.user;
 
     // Authorization check
     if (
@@ -219,7 +293,7 @@ export const createUser = async (req, res) => {
       provider = "email",
     } = req.body;
 
-    const password = generateStrongPassword(10)
+    const password = generateStrongPassword(10);
 
     const address =
       province && city && fullAddress
@@ -381,6 +455,18 @@ export const updateUserPermissions = async (req, res) => {
     const { userId } = req.params;
     const { permissions } = req.body;
 
+    const hasAllPermissions = permissions.every((permission) =>
+      req.user.permissions.includes(permission)
+    );
+
+    if (!hasAllPermissions) {
+      return res.status(403).json({
+        success: false,
+        status: "Not allowed",
+        message: "Some permissions are not allowed",
+      });
+    }
+
     // Check if requesting user has permission to grant these permissions
     const unauthorized = permissions.filter(
       (p) => !req.user.permissions.includes(p)
@@ -464,6 +550,45 @@ export const getUserProfile = async (req, res) => {
       message: "Profile fetched successfully",
       status: "success",
       data: user,
+    });
+  } catch (error) {
+    handleError(error, res);
+  }
+};
+
+export const getAllAdmins = async (req, res) => {
+  try {
+    const users = await User.findAll({
+      where: {
+        role: "admin",
+      },
+      include: [
+        {
+          model: Auth,
+          as: "auth",
+          attributes: {
+            exclude: [
+              "password",
+              "passwordResetToken",
+              "emailVerificationToken",
+              "twoFactorSecret",
+            ],
+          },
+        },
+      ],
+    });
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({
+        status: "Not Found",
+        message: "No admins found",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Admins fetched successfully",
+      status: "successful",
+      data: users,
     });
   } catch (error) {
     handleError(error, res);
