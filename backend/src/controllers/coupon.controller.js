@@ -4,7 +4,6 @@ import {
   Product,
   Order,
   OrderCoupon,
-  sequelize,
   Cart,
 } from "../models/index.model.js";
 import { Op } from "sequelize";
