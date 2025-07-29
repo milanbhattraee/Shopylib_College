@@ -83,7 +83,6 @@ export const createOrder = async (req, res) => {
         transaction
       );
     }
-  
 
     const order = await Order.create(
       {
@@ -100,7 +99,6 @@ export const createOrder = async (req, res) => {
       },
       { transaction }
     );
-
 
     await Promise.all(
       coupenResult.appliedCoupons.map((item) =>
@@ -275,15 +273,66 @@ export const getSingleOrder = async (req, res) => {
 
 export const getUserOrders = async (req, res) => {
   try {
-    let userId;
-    if (
-      req.user.role !== "admin" ||
-      !req.user.permissions.includes("manageOrders")
-    ) {
-      userId = req.user.id;
-    } else {
-      userId = req.query.userId;
-    }
+    const userId = req.query.userId;
+
+    const { page = 1, limit = 10, status } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = { userId };
+    if (status) whereClause.status = status;
+
+    const orders = await Order.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: OrderItem,
+          as: "items",
+          include: [
+            {
+              model: Product,
+              as: "product",
+              attributes: ["id", "name", "slug", "images"],
+            },
+            {
+              model: ProductVariant,
+              as: "productVarient",
+              attributes: ["id", "name", "attributes"],
+            },
+          ],
+        },
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [["createdAt", "DESC"]],
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Orders fetched successfully",
+      status: "Order Fetched",
+      data: {
+        orders: orders.rows,
+        pagination: {
+          total: orders.count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(orders.count / limit),
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res.status(500).json({
+      success: false,
+      status: "Orders failed to get",
+      message: error.message,
+    });
+  }
+};
+
+export const getMyOrders = async (req, res) => {
+  try {
+    let userId = req.user.userId;
 
     const { page = 1, limit = 10, status } = req.query;
     const offset = (page - 1) * limit;
