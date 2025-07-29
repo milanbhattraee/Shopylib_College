@@ -15,6 +15,7 @@ import reviewRouter from "./routes/review.route.js";
 import searchRouter from "./routes/search.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
 import authRouter from "./routes/auth.route.js";
+import analyticsRoutes from "./routes/analytic.route.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
 
 const PORT = process.env.PORT || 8000;
@@ -55,6 +56,8 @@ app.use("/api/v1/reviews", authMiddleware, reviewRouter);
 
 app.use("/api/v1/search", authMiddleware, searchRouter);
 app.use("/api/v1/wishlists", authMiddleware, wishlistRouter);
+
+app.use("/api/v1/analytics", analyticsRoutes);
 
 // Database connection and server startup
 sequelize
