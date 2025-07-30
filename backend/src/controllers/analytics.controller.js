@@ -1,5 +1,5 @@
 import { 
-  User, Order, OrderItem, Product, ProductVariant, Category, 
+  User, Order, OrderItem, Product, ProductVariant,  Category, 
   Coupon, Review, sequelize 
 } from "../models/index.model.js";
 import { Op, fn, col, literal,QueryTypes } from "sequelize";
@@ -566,71 +566,9 @@ export const getProductAnalytics = async (req, res) => {
       categoryId: categoryId || null
     };
 
-    // First, let's check if we have any products at all
-    const totalProducts = await Product.findAll({
-      attributes: ['id', 'name', 'isActive'],
-      limit: 5,
-      raw: true
-    }).catch(error => {
-      console.error("Basic product query error:", error);
-      return [];
-    });
-
-    debugInfo.sampleProducts = totalProducts;
-
-    // Check if we have any categories
-    const totalCategories = await Category.findAll({
-      attributes: ['id', 'name'],
-      limit: 5,
-      raw: true
-    }).catch(error => {
-      console.error("Basic category query error:", error);
-      return [];
-    });
-
-    debugInfo.sampleCategories = totalCategories;
-
-    // Check if we have any orders in the date range
-    const recentOrders = await Order.findAll({
-      attributes: ['id', 'status', 'createdAt'],
-      where: {
-        createdAt: { [Op.gte]: startDate },
-        status: { [Op.in]: ['confirmed', 'processing', 'shipped', 'delivered'] }
-      },
-      limit: 5,
-      raw: true
-    }).catch(error => {
-      console.error("Basic order query error:", error);
-      return [];
-    });
-
-    debugInfo.sampleOrders = recentOrders;
-
-    // Check if we have any order items - FIXED: Check both productId and variantId
-    const recentOrderItems = await OrderItem.findAll({
-      attributes: ['id', 'productId', 'productVarientId', 'quantity', 'price'],
-      include: [{
-        model: Order,
-        as: 'order',
-        attributes: ['status', 'createdAt'],
-        where: {
-          createdAt: { [Op.gte]: startDate },
-          status: { [Op.in]: ['confirmed', 'processing', 'shipped', 'delivered'] }
-        }
-      }],
-      limit: 10,
-      raw: true
-    }).catch(error => {
-      console.error("Basic order items query error:", error);
-      return [];
-    });
-
-    debugInfo.sampleOrderItems = recentOrderItems;
-
-    // Product performance query with sales data
+    // Product performance query with corrected sales calculation
     let productPerformance = [];
     try {
-      // FIXED: Updated query to handle both direct product sales and variant sales
       const productSalesQuery = `
         SELECT 
           p.id,
@@ -653,8 +591,15 @@ export const getProductAnalytics = async (req, res) => {
             END
           ), 0) as variant_sold,
           COALESCE(SUM(oi.quantity), 0) as total_sold,
-          COALESCE(SUM(oi.quantity * oi.price), 0) as revenue,
-          COUNT(DISTINCT oi.id) as order_count
+          COALESCE(SUM(
+            CASE 
+              WHEN oi."productVarientId" IS NULL THEN oi.quantity * oi.price
+              ELSE 0 
+            END
+          ), 0) as direct_revenue,
+          COUNT(DISTINCT CASE WHEN oi."productVarientId" IS NULL THEN oi."orderId" END) as direct_order_count,
+          COUNT(DISTINCT CASE WHEN oi."productVarientId" IS NOT NULL THEN oi."orderId" END) as variant_order_count,
+          COUNT(DISTINCT oi."orderId") as total_order_count
         FROM products p
         LEFT JOIN categories c ON p."categoryId" = c.id
         LEFT JOIN order_items oi ON p.id = oi."productId"
@@ -664,7 +609,7 @@ export const getProductAnalytics = async (req, res) => {
         WHERE p."isActive" = true
         ${categoryId ? 'AND p."categoryId" = $2' : ''}
         GROUP BY p.id, p.name, p.price, p."stockQuantity", p."categoryId", p."isActive", c.name
-        ORDER BY revenue DESC
+        ORDER BY direct_revenue DESC
         LIMIT 20
       `;
 
@@ -681,16 +626,16 @@ export const getProductAnalytics = async (req, res) => {
       productPerformance = productSalesResults.map(row => ({
         id: row.id,
         name: row.name,
-        price: row.price,
-        stockQuantity: row.stockQuantity,
+        price: parseFloat(row.price || 0),
+        stockQuantity: parseInt(row.stockQuantity || 0),
         categoryId: row.categoryId,
         isActive: row.isActive,
         category: { name: row.category_name },
         directSold: parseInt(row.direct_sold || 0),
         variantSold: parseInt(row.variant_sold || 0),
         totalSold: parseInt(row.total_sold || 0),
-        revenue: parseFloat(row.revenue || 0),
-        orderCount: parseInt(row.order_count || 0)
+        revenue: parseFloat(row.direct_revenue || 0), // Only direct product revenue
+        orderCount: parseInt(row.direct_order_count || 0) // Only direct orders
       }));
 
     } catch (error) {
@@ -700,7 +645,7 @@ export const getProductAnalytics = async (req, res) => {
       // Fallback to basic product query without sales data
       try {
         const whereClause = categoryId ? { categoryId: categoryId, isActive: true } : { isActive: true };
-        productPerformance = await Product.findAll({
+        const basicProducts = await Product.findAll({
           attributes: ['id', 'name', 'price', 'stockQuantity', 'categoryId', 'isActive'],
           where: whereClause,
           include: [{
@@ -714,7 +659,7 @@ export const getProductAnalytics = async (req, res) => {
         });
         
         // Add zero sales data for fallback
-        productPerformance = productPerformance.map(product => ({
+        productPerformance = basicProducts.map(product => ({
           ...product.toJSON(),
           directSold: 0,
           variantSold: 0,
@@ -755,70 +700,7 @@ export const getProductAnalytics = async (req, res) => {
       return [];
     });
 
-    // Category performance with sales data
-    let categoryPerformance = [];
-    try {
-      const categorySalesQuery = `
-        SELECT 
-          c.id,
-          c.name,
-          COUNT(DISTINCT p.id) as product_count,
-          COALESCE(SUM(oi.quantity), 0) as total_sold,
-          COALESCE(SUM(oi.quantity * oi.price), 0) as revenue,
-          COUNT(DISTINCT oi.id) as order_count
-        FROM categories c
-        LEFT JOIN products p ON c.id = p."categoryId" AND p."isActive" = true
-        LEFT JOIN order_items oi ON p.id = oi."productId"
-        LEFT JOIN orders o ON oi."orderId" = o.id 
-          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-          AND o."createdAt" >= $1
-        GROUP BY c.id, c.name
-        ORDER BY revenue DESC
-      `;
-
-      const categorySalesResults = await sequelize.query(categorySalesQuery, {
-        bind: [startDate],
-        type: sequelize.QueryTypes.SELECT
-      });
-
-      debugInfo.categorySalesResults = categorySalesResults.length;
-      debugInfo.sampleCategorySales = categorySalesResults.slice(0, 2);
-
-      categoryPerformance = categorySalesResults.map(row => ({
-        id: row.id,
-        name: row.name,
-        productCount: parseInt(row.product_count || 0),
-        totalSold: parseInt(row.total_sold || 0),
-        revenue: parseFloat(row.revenue || 0),
-        orderCount: parseInt(row.order_count || 0)
-      }));
-
-    } catch (error) {
-      console.error("Category sales query error:", error);
-      debugInfo.categorySalesQueryError = error.message;
-      
-      // Fallback to basic category query
-      try {
-        const basicCategories = await Category.findAll({
-          attributes: ['id', 'name'],
-          limit: 10,
-          raw: false
-        });
-        categoryPerformance = basicCategories.map(cat => ({
-          id: cat.id,
-          name: cat.name,
-          productCount: 0,
-          totalSold: 0,
-          revenue: 0,
-          orderCount: 0
-        }));
-      } catch (fallbackError) {
-        debugInfo.categoryFallbackError = fallbackError.message;
-        categoryPerformance = [];
-      }
-    }
-
-    // FIXED: Top Variants Query - This was the main issue
+    // Top Variants Query - CORRECTED
     let topVariants = [];
     try {
       const topVariantsQuery = `
@@ -834,8 +716,8 @@ export const getProductAnalytics = async (req, res) => {
           c.name as category_name,
           COALESCE(SUM(oi.quantity), 0) as total_sold,
           COALESCE(SUM(oi.quantity * oi.price), 0) as revenue,
-          COUNT(DISTINCT oi.id) as order_count,
-          COUNT(DISTINCT o.id) as unique_orders
+          COUNT(DISTINCT oi.id) as order_item_count,
+          COUNT(DISTINCT oi."orderId") as unique_orders
         FROM product_variants pv
         LEFT JOIN products p ON pv."productId" = p.id
         LEFT JOIN categories c ON p."categoryId" = c.id
@@ -871,7 +753,7 @@ export const getProductAnalytics = async (req, res) => {
         isActive: row.isActive,
         totalSold: parseInt(row.total_sold || 0),
         revenue: parseFloat(row.revenue || 0),
-        orderCount: parseInt(row.order_count || 0),
+        orderCount: parseInt(row.unique_orders || 0), // Changed from order_item_count to unique_orders
         uniqueOrders: parseInt(row.unique_orders || 0)
       }));
 
@@ -921,14 +803,95 @@ export const getProductAnalytics = async (req, res) => {
       }
     }
 
-    // Low Stock Variants - FIXED
+    // Category performance with corrected calculation
+    let categoryPerformance = [];
+    try {
+      const categorySalesQuery = `
+        SELECT 
+          c.id,
+          c.name,
+          COUNT(DISTINCT p.id) as product_count,
+          COALESCE(SUM(
+            CASE 
+              WHEN oi."productVarientId" IS NULL THEN oi.quantity 
+              ELSE 0 
+            END
+          ), 0) as direct_sold,
+          COALESCE(SUM(
+            CASE 
+              WHEN oi."productVarientId" IS NOT NULL THEN oi.quantity 
+              ELSE 0 
+            END
+          ), 0) as variant_sold,
+          COALESCE(SUM(oi.quantity), 0) as total_sold,
+          COALESCE(SUM(oi.quantity * oi.price), 0) as total_revenue,
+          COUNT(DISTINCT oi."orderId") as order_count
+        FROM categories c
+        LEFT JOIN products p ON c.id = p."categoryId" AND p."isActive" = true
+        LEFT JOIN order_items oi ON p.id = oi."productId"
+        LEFT JOIN orders o ON oi."orderId" = o.id 
+          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+          AND o."createdAt" >= $1
+        GROUP BY c.id, c.name
+        ORDER BY total_revenue DESC
+      `;
+
+      const categorySalesResults = await sequelize.query(categorySalesQuery, {
+        bind: [startDate],
+        type: sequelize.QueryTypes.SELECT
+      });
+
+      debugInfo.categorySalesResults = categorySalesResults.length;
+      debugInfo.sampleCategorySales = categorySalesResults.slice(0, 2);
+
+      categoryPerformance = categorySalesResults.map(row => ({
+        id: row.id,
+        name: row.name,
+        productCount: parseInt(row.product_count || 0),
+        totalSold: parseInt(row.total_sold || 0),
+        revenue: parseFloat(row.total_revenue || 0),
+        orderCount: parseInt(row.order_count || 0)
+      }));
+
+    } catch (error) {
+      console.error("Category sales query error:", error);
+      debugInfo.categorySalesQueryError = error.message;
+      
+      // Fallback to basic category query
+      try {
+        const basicCategories = await Category.findAll({
+          attributes: ['id', 'name'],
+          limit: 10,
+          raw: false
+        });
+        categoryPerformance = basicCategories.map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          productCount: 0,
+          totalSold: 0,
+          revenue: 0,
+          orderCount: 0
+        }));
+      } catch (fallbackError) {
+        debugInfo.categoryFallbackError = fallbackError.message;
+        categoryPerformance = [];
+      }
+    }
+
+    // Low Stock Variants
     let lowStockVariants = [];
     try {
       lowStockVariants = await ProductVariant.findAll({
         attributes: ['id', 'sku', 'name', 'stockQuantity', 'isActive', 'price'],
         where: {
-          stockQuantity: { [Op.lte]: 10 },
-          isActive: true
+          [Op.and]: [
+            sequelize.where(
+              sequelize.col('stockQuantity'), 
+              Op.lte, 
+              5 // Use a fixed threshold or join with product for lowStockThreshold
+            ),
+            { isActive: true }
+          ]
         },
         include: [{
           model: Product,
@@ -954,7 +917,7 @@ export const getProductAnalytics = async (req, res) => {
       lowStockVariants = [];
     }
 
-    // Variant counts - FIXED
+    // Variant counts
     let totalVariants = 0;
     let activeVariants = 0;
     let lowStockVariantCount = 0;
@@ -963,7 +926,7 @@ export const getProductAnalytics = async (req, res) => {
         SELECT 
           COUNT(*) as total_variants,
           COUNT(CASE WHEN "isActive" = true THEN 1 END) as active_variants,
-          COUNT(CASE WHEN "stockQuantity" <= 10 AND "isActive" = true THEN 1 END) as low_stock_variants
+          COUNT(CASE WHEN "stockQuantity" <= 5 AND "isActive" = true THEN 1 END) as low_stock_variants
         FROM product_variants pv
         ${categoryId ? `
           LEFT JOIN products p ON pv."productId" = p.id
@@ -997,7 +960,7 @@ export const getProductAnalytics = async (req, res) => {
       return isNaN(parsed) ? defaultValue : parsed;
     };
 
-    // Calculate total revenue from all sources
+    // Calculate total revenue correctly - separate product direct sales from variant sales
     const productRevenue = (productPerformance || []).reduce((sum, product) => {
       return sum + safeParseFloat(product.revenue);
     }, 0);
@@ -1006,7 +969,7 @@ export const getProductAnalytics = async (req, res) => {
       return sum + safeParseFloat(variant.revenue);
     }, 0);
 
-    // Format response with debug info
+    // Format response
     const response = {
       success: true,
       data: {
@@ -1102,615 +1065,508 @@ export const getProductAnalytics = async (req, res) => {
 
 export const getCouponAnalytics = async (req, res) => {
   try {
-    const { period = '30', debug = false } = req.query;
-    
-    // Validate period parameter
+    const { period = '30' } = req.query;
     const periodInt = parseInt(period);
+    
     if (isNaN(periodInt) || periodInt < 1 || periodInt > 365) {
       return res.status(400).json({
         success: false,
-        message: "Period must be a number between 1 and 365 days"
+        message: "Period must be between 1-365 days"
       });
     }
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - periodInt);
-    startDate.setHours(0, 0, 0, 0);
 
-    const debugInfo = {
-      startDate: startDate.toISOString(),
-      period: periodInt
-    };
+    // 1. Top coupons - Only show usage count, not individual discount
+    const topCouponsQuery = `
+      SELECT 
+        c.id, c.code, c.name, c.type, c.value, c."usedCount",
+        COUNT(DISTINCT oc."orderId") as orders_count
+      FROM coupons c
+      LEFT JOIN order_coupons oc ON c.id = oc."couponId"
+      LEFT JOIN orders o ON oc."orderId" = o.id 
+        AND o."createdAt" >= $1 
+        AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+      WHERE c."isActive" = true
+      GROUP BY c.id, c.code, c.name, c.type, c.value, c."usedCount"
+      ORDER BY orders_count DESC, c."usedCount" DESC
+      LIMIT 10
+    `;
 
-    // Helper functions
-    const safeParseFloat = (value, defaultValue = 0) => {
-      const parsed = parseFloat(value);
-      return isNaN(parsed) ? defaultValue : parsed;
-    };
+    const topCoupons = await sequelize.query(topCouponsQuery, {
+      bind: [startDate],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-    const safeParseInt = (value, defaultValue = 0) => {
-      const parsed = parseInt(value);
-      return isNaN(parsed) ? defaultValue : parsed;
-    };
+    // 2. Orders comparison - Remove totalDiscount from both types
+    const orderStatsQuery = `
+      SELECT 
+        CASE 
+          WHEN EXISTS(SELECT 1 FROM order_coupons oc WHERE oc."orderId" = o.id) 
+          THEN 'With Coupon' 
+          ELSE 'Without Coupon' 
+        END as type,
+        COUNT(*) as count,
+        ROUND(AVG(o."subtotal"), 2) as avg_order_value
+      FROM orders o
+      WHERE o."createdAt" >= $1 
+        AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+      GROUP BY CASE 
+        WHEN EXISTS(SELECT 1 FROM order_coupons oc WHERE oc."orderId" = o.id) 
+        THEN 'With Coupon' 
+        ELSE 'Without Coupon' 
+      END
+      ORDER BY type DESC
+    `;
 
-    // FIXED: Coupon performance using proper many-to-many relationship
-    let couponPerformance = [];
-    try {
-      const couponPerformanceQuery = `
-        SELECT 
-          c.id,
-          c.code,
-          c.name,
-          c.type,
-          c.value,
-          c."usageLimit",
-          c."usedCount",
-          c."maxDiscountAmount",
-          c."minimumAmount",
-          c."isActive",
-          c."startDate",
-          c."endDate",
-          COUNT(DISTINCT oc."orderId") as actual_usage,
-          COUNT(DISTINCT o.id) as successful_orders,
-          COALESCE(SUM(o."discountAmount"), 0) as total_discount_given,
-          COALESCE(AVG(o."subtotal"), 0) as avg_order_value,
-          COALESCE(SUM(o."subtotal"), 0) as total_order_value
-        FROM coupons c
-        LEFT JOIN order_coupons oc ON c.id = oc."couponId"
-        LEFT JOIN orders o ON oc."orderId" = o.id 
-          AND o."createdAt" >= $1
-          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-        WHERE c."isActive" = true
-        GROUP BY c.id, c.code, c.name, c.type, c.value, c."usageLimit", c."usedCount", 
-                 c."maxDiscountAmount", c."minimumAmount", c."isActive", c."startDate", c."endDate"
-        ORDER BY total_discount_given DESC, actual_usage DESC
-        LIMIT 20
-      `;
+    const orderStats = await sequelize.query(orderStatsQuery, {
+      bind: [startDate],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-      const couponResults = await sequelize.query(couponPerformanceQuery, {
-        bind: [startDate],
-        type: sequelize.QueryTypes.SELECT
-      });
+    // 3. Top users with their actual total savings - Fixed to avoid duplicates
+    const topUsersQuery = `
+      SELECT 
+        u.id,
+        u."firstName", 
+        u."lastName",
+        COUNT(DISTINCT o.id) as orders_count,
+        COALESCE(SUM(DISTINCT o."discountAmount"), 0) as total_savings
+      FROM users u
+      INNER JOIN orders o ON u.id = o."userId"
+      WHERE EXISTS (SELECT 1 FROM order_coupons oc WHERE oc."orderId" = o.id)
+        AND o."createdAt" >= $1 
+        AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+      GROUP BY u.id, u."firstName", u."lastName"
+      HAVING COALESCE(SUM(DISTINCT o."discountAmount"), 0) > 0
+      ORDER BY total_savings DESC
+      LIMIT 10
+    `;
 
-      debugInfo.couponPerformanceResults = couponResults.length;
-      debugInfo.sampleCouponResults = couponResults.slice(0, 2);
+    const topUsers = await sequelize.query(topUsersQuery, {
+      bind: [startDate],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-      couponPerformance = couponResults.map(coupon => ({
-        id: coupon.id,
-        code: coupon.code,
-        name: coupon.name,
-        type: coupon.type,
-        value: safeParseFloat(coupon.value),
-        usageLimit: safeParseInt(coupon.usageLimit),
-        usedCount: safeParseInt(coupon.usedCount),
-        maxDiscountAmount: safeParseFloat(coupon.maxDiscountAmount),
-        minimumAmount: safeParseFloat(coupon.minimumAmount),
-        isActive: coupon.isActive,
-        startDate: coupon.startDate,
-        endDate: coupon.endDate,
-        actualUsage: safeParseInt(coupon.actual_usage),
-        successfulOrders: safeParseInt(coupon.successful_orders),
-        totalDiscountGiven: safeParseFloat(coupon.total_discount_given),
-        avgOrderValue: safeParseFloat(coupon.avg_order_value),
-        totalOrderValue: safeParseFloat(coupon.total_order_value),
-        usageRate: coupon.usageLimit > 0 ? 
-          Math.round((safeParseInt(coupon.actual_usage) / safeParseInt(coupon.usageLimit)) * 100) : null,
-        effectivenessScore: safeParseFloat(coupon.total_discount_given) > 0 ? 
-          Math.round((safeParseFloat(coupon.total_order_value) / safeParseFloat(coupon.total_discount_given)) * 100) / 100 : 0
-      }));
+    // 4. Overall discount summary
+    const discountSummaryQuery = `
+      SELECT 
+        COUNT(DISTINCT o.id) as orders_with_discount,
+        COALESCE(SUM(o."discountAmount"), 0) as total_discount_given,
+        COALESCE(AVG(o."discountAmount"), 0) as avg_discount_per_order,
+        COALESCE(SUM(o."subtotal"), 0) as total_order_value_with_coupons
+      FROM orders o
+      WHERE EXISTS (SELECT 1 FROM order_coupons oc WHERE oc."orderId" = o.id)
+        AND o."createdAt" >= $1 
+        AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+    `;
 
-    } catch (error) {
-      console.error("Coupon performance query error:", error);
-      debugInfo.couponPerformanceError = error.message;
-      
-      // Fallback to basic coupon query
-      try {
-        const basicCoupons = await Coupon.findAll({
-          attributes: ['id', 'code', 'name', 'type', 'value', 'usageLimit', 'usedCount', 
-                      'maxDiscountAmount', 'minimumAmount', 'isActive', 'startDate', 'endDate'],
-          where: { isActive: true },
-          limit: 20,
-          order: [['usedCount', 'DESC']],
-          raw: true
-        });
-        
-        couponPerformance = basicCoupons.map(coupon => ({
-          ...coupon,
-          actualUsage: 0,
-          successfulOrders: 0,
-          totalDiscountGiven: 0,
-          avgOrderValue: 0,
-          totalOrderValue: 0,
-          usageRate: coupon.usageLimit > 0 ? 
-            Math.round((coupon.usedCount / coupon.usageLimit) * 100) : null,
-          effectivenessScore: 0
-        }));
-      } catch (fallbackError) {
-        debugInfo.couponFallbackError = fallbackError.message;
-        couponPerformance = [];
-      }
-    }
+    const [discountSummary] = await sequelize.query(discountSummaryQuery, {
+      bind: [startDate],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-    // FIXED: Coupon conversion rate analysis
-    let couponConversion = [];
-    try {
-      const couponConversionQuery = `
-        SELECT 
-          c.id,
-          c.code,
-          c.name,
-          c.type,
-          c.value,
-          c."isActive",
-          COUNT(DISTINCT oc."orderId") as orders_with_coupon,
-          COUNT(DISTINCT CASE WHEN o.status IN ('confirmed', 'processing', 'shipped', 'delivered') 
-                              THEN oc."orderId" END) as successful_orders_with_coupon,
-          COALESCE(SUM(CASE WHEN o.status IN ('confirmed', 'processing', 'shipped', 'delivered') 
-                              THEN o."discountAmount" ELSE 0 END), 0) as total_discount_given,
-          COALESCE(AVG(CASE WHEN o.status IN ('confirmed', 'processing', 'shipped', 'delivered') 
-                              THEN o."subtotal" END), 0) as avg_order_value_with_coupon,
-          -- Calculate conversion rate based on successful orders
-          ROUND(
-            CASE 
-              WHEN COUNT(DISTINCT oc."orderId") > 0 
-              THEN (COUNT(DISTINCT CASE WHEN o.status IN ('confirmed', 'processing', 'shipped', 'delivered') 
-                                        THEN oc."orderId" END)::float / COUNT(DISTINCT oc."orderId")) * 100
-              ELSE 0 
-            END,
-            2
-          ) as success_rate
-        FROM coupons c
-        LEFT JOIN order_coupons oc ON c.id = oc."couponId"
-        LEFT JOIN orders o ON oc."orderId" = o.id AND o."createdAt" >= $1
-        WHERE c."isActive" = true
-        GROUP BY c.id, c.code, c.name, c.type, c.value, c."isActive"
-        HAVING COUNT(DISTINCT oc."orderId") > 0
-        ORDER BY success_rate DESC, total_discount_given DESC
-        LIMIT 15
-      `;
+    // 5. Basic summary
+    const summaryQuery = `
+      SELECT 
+        (SELECT COUNT(*) FROM coupons WHERE "deletedAt" IS NULL) as total_coupons,
+        (SELECT COUNT(*) FROM coupons WHERE "isActive" = true AND "deletedAt" IS NULL) as active_coupons,
+        (SELECT COALESCE(SUM("usedCount"), 0) FROM coupons WHERE "deletedAt" IS NULL) as total_usage,
+        (SELECT COUNT(DISTINCT oc."orderId") 
+         FROM order_coupons oc 
+         INNER JOIN orders o ON oc."orderId" = o.id 
+         WHERE o."createdAt" >= $1 
+           AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+        ) as orders_with_coupons_in_period
+    `;
 
-      const conversionResults = await sequelize.query(couponConversionQuery, {
-        bind: [startDate],
-        type: sequelize.QueryTypes.SELECT
-      });
+    const [summary] = await sequelize.query(summaryQuery, {
+      bind: [startDate],
+      type: sequelize.QueryTypes.SELECT
+    });
 
-      debugInfo.couponConversionResults = conversionResults.length;
-      debugInfo.sampleConversionResults = conversionResults.slice(0, 2);
-
-      couponConversion = conversionResults.map(coupon => ({
-        id: coupon.id,
-        code: coupon.code,
-        name: coupon.name,
-        type: coupon.type,
-        value: safeParseFloat(coupon.value),
-        isActive: coupon.isActive,
-        ordersWithCoupon: safeParseInt(coupon.orders_with_coupon),
-        successfulOrdersWithCoupon: safeParseInt(coupon.successful_orders_with_coupon),
-        successRate: safeParseFloat(coupon.success_rate),
-        totalDiscountGiven: safeParseFloat(coupon.total_discount_given),
-        avgOrderValueWithCoupon: safeParseFloat(coupon.avg_order_value_with_coupon)
-      }));
-
-    } catch (error) {
-      console.error("Coupon conversion query error:", error);
-      debugInfo.couponConversionError = error.message;
-      couponConversion = [];
-    }
-
-    // FIXED: Discount impact analysis with better comparisons
-    let discountImpact = [];
-    try {
-      const discountImpactQuery = `
-        SELECT 
-          CASE 
-            WHEN o."discountAmount" > 0 THEN 'With Coupon'
-            ELSE 'Without Coupon'
-          END as order_type,
-          COUNT(o.id) as order_count,
-          ROUND(AVG(o."subtotal"), 2) as avg_order_value,
-          ROUND(AVG(o."discountAmount"), 2) as avg_discount,
-          COALESCE(SUM(o."discountAmount"), 0) as total_discount,
-          COALESCE(SUM(o."subtotal"), 0) as total_order_value,
-          -- Calculate average discount percentage
-          ROUND(
-            CASE 
-              WHEN AVG(o."subtotal") > 0 
-              THEN (AVG(o."discountAmount") / AVG(o."subtotal")) * 100
-              ELSE 0 
-            END,
-            2
-          ) as avg_discount_percentage
-        FROM orders o
-        WHERE o."createdAt" >= $1
-          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-        GROUP BY 
-          CASE 
-            WHEN o."discountAmount" > 0 THEN 'With Coupon'
-            ELSE 'Without Coupon'
-          END
-        ORDER BY order_type DESC
-      `;
-
-      const impactResults = await sequelize.query(discountImpactQuery, {
-        bind: [startDate],
-        type: sequelize.QueryTypes.SELECT
-      });
-
-      debugInfo.discountImpactResults = impactResults.length;
-      debugInfo.sampleImpactResults = impactResults;
-
-      discountImpact = impactResults.map(impact => ({
-        orderType: impact.order_type,
-        orderCount: safeParseInt(impact.order_count),
-        avgOrderValue: safeParseFloat(impact.avg_order_value),
-        avgDiscount: safeParseFloat(impact.avg_discount),
-        totalDiscount: safeParseFloat(impact.total_discount),
-        totalOrderValue: safeParseFloat(impact.total_order_value),
-        avgDiscountPercentage: safeParseFloat(impact.avg_discount_percentage)
-      }));
-
-    } catch (error) {
-      console.error("Discount impact query error:", error);
-      debugInfo.discountImpactError = error.message;
-      discountImpact = [];
-    }
-
-    // FIXED: Active vs Inactive coupons summary
-    let couponSummary = {};
-    try {
-      const summaryQuery = `
-        SELECT 
-          COUNT(*) as total_coupons,
-          COUNT(CASE WHEN "isActive" = true THEN 1 END) as active_coupons,
-          COUNT(CASE WHEN "isActive" = false THEN 1 END) as inactive_coupons,
-          COUNT(CASE WHEN "endDate" < NOW() THEN 1 END) as expired_coupons,
-          COUNT(CASE WHEN "usedCount" >= "usageLimit" THEN 1 END) as exhausted_coupons,
-          COALESCE(AVG("value"), 0) as avg_coupon_value,
-          COALESCE(SUM("usedCount"), 0) as total_usage_count
-        FROM coupons
-      `;
-
-      const [summaryResult] = await sequelize.query(summaryQuery, {
-        type: sequelize.QueryTypes.SELECT
-      });
-
-      couponSummary = {
-        totalCoupons: safeParseInt(summaryResult.total_coupons),
-        activeCoupons: safeParseInt(summaryResult.active_coupons),
-        inactiveCoupons: safeParseInt(summaryResult.inactive_coupons),
-        expiredCoupons: safeParseInt(summaryResult.expired_coupons),
-        exhaustedCoupons: safeParseInt(summaryResult.exhausted_coupons),
-        avgCouponValue: safeParseFloat(summaryResult.avg_coupon_value),
-        totalUsageCount: safeParseInt(summaryResult.total_usage_count)
-      };
-
-    } catch (error) {
-      console.error("Coupon summary query error:", error);
-      debugInfo.couponSummaryError = error.message;
-      couponSummary = {
-        totalCoupons: 0,
-        activeCoupons: 0,
-        inactiveCoupons: 0,
-        expiredCoupons: 0,
-        exhaustedCoupons: 0,
-        avgCouponValue: 0,
-        totalUsageCount: 0
-      };
-    }
-
-    // FIXED: Top users by coupon usage
-    let topCouponUsers = [];
-    try {
-      const topUsersQuery = `
-        SELECT 
-          u.id,
-          u."firstName",
-          u."lastName",
-          a.email,
-          COUNT(DISTINCT oc."couponId") as unique_coupons_used,
-          COUNT(DISTINCT oc."orderId") as orders_with_coupons,
-          COALESCE(SUM(o."discountAmount"), 0) as total_savings,
-          COALESCE(AVG(o."discountAmount"), 0) as avg_savings_per_order,
-          COALESCE(SUM(o."subtotal"), 0) as total_order_value,
-          ROUND(
-            CASE 
-              WHEN SUM(o."subtotal") > 0 
-              THEN (SUM(o."discountAmount") / SUM(o."subtotal")) * 100
-              ELSE 0 
-            END,
-            2
-          ) as savings_percentage
-        FROM users u
-        LEFT JOIN auth a ON u."authId" = a.id
-        JOIN orders o ON u.id = o."userId"
-        JOIN order_coupons oc ON o.id = oc."orderId"
-        WHERE o."createdAt" >= $1
-          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-        GROUP BY u.id, u."firstName", u."lastName", a.email
-        HAVING COUNT(DISTINCT oc."orderId") > 0
-        ORDER BY total_savings DESC, orders_with_coupons DESC
-        LIMIT 10
-      `;
-
-      const topUsersResults = await sequelize.query(topUsersQuery, {
-        bind: [startDate],
-        type: sequelize.QueryTypes.SELECT
-      });
-
-      debugInfo.topCouponUsersResults = topUsersResults.length;
-      debugInfo.sampleTopUsers = topUsersResults.slice(0, 2);
-
-      topCouponUsers = topUsersResults.map(user => ({
-        id: user.id,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-        email: user.email,
-        uniqueCouponsUsed: safeParseInt(user.unique_coupons_used),
-        ordersWithCoupons: safeParseInt(user.orders_with_coupons),
-        totalSavings: safeParseFloat(user.total_savings),
-        avgSavingsPerOrder: safeParseFloat(user.avg_savings_per_order),
-        totalOrderValue: safeParseFloat(user.total_order_value),
-        savingsPercentage: safeParseFloat(user.savings_percentage)
-      }));
-
-      // If no results from the complex query, try a simpler approach
-      if (topCouponUsers.length === 0) {
-        debugInfo.tryingFallbackTopUsers = true;
-        
-        const fallbackQuery = `
-          SELECT 
-            u.id,
-            u."firstName",
-            u."lastName",
-            COUNT(DISTINCT o.id) as orders_with_discount,
-            COALESCE(SUM(o."discountAmount"), 0) as total_savings
-          FROM users u
-          JOIN orders o ON u.id = o."userId"
-          WHERE o."createdAt" >= $1
-            AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-            AND o."discountAmount" > 0
-          GROUP BY u.id, u."firstName", u."lastName"
-          ORDER BY total_savings DESC
-          LIMIT 10
-        `;
-
-        const fallbackResults = await sequelize.query(fallbackQuery, {
-          bind: [startDate],
-          type: sequelize.QueryTypes.SELECT
-        });
-
-        topCouponUsers = fallbackResults.map(user => ({
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-          email: null,
-          uniqueCouponsUsed: 0,
-          ordersWithCoupons: safeParseInt(user.orders_with_discount),
-          totalSavings: safeParseFloat(user.total_savings),
-          avgSavingsPerOrder: 0,
-          totalOrderValue: 0,
-          savingsPercentage: 0
-        }));
-
-        debugInfo.fallbackTopUsersResults = fallbackResults.length;
-      }
-
-    } catch (error) {
-      console.error("Top coupon users query error:", error);
-      debugInfo.topCouponUsersError = error.message;
-      
-      // Final fallback - get users with any discount orders
-      try {
-        const finalFallbackQuery = `
-          SELECT 
-            u.id,
-            u."firstName",
-            u."lastName",
-            COUNT(o.id) as discount_orders,
-            SUM(o."discountAmount") as total_discount
-          FROM users u
-          JOIN orders o ON u.id = o."userId"
-          WHERE o."discountAmount" > 0
-            AND o."createdAt" >= $1
-          GROUP BY u.id, u."firstName", u."lastName"
-          ORDER BY total_discount DESC
-          LIMIT 5
-        `;
-
-        const finalResults = await sequelize.query(finalFallbackQuery, {
-          bind: [startDate],
-          type: sequelize.QueryTypes.SELECT
-        });
-
-        topCouponUsers = finalResults.map(user => ({
-          id: user.id,
-          firstName: user.firstName,
-          lastName: user.lastName,
-          fullName: `${user.firstName || ''} ${user.lastName || ''}`.trim(),
-          email: null,
-          uniqueCouponsUsed: 0,
-          ordersWithCoupons: safeParseInt(user.discount_orders),
-          totalSavings: safeParseFloat(user.total_discount),
-          avgSavingsPerOrder: 0,
-          totalOrderValue: 0,
-          savingsPercentage: 0
-        }));
-
-        debugInfo.finalFallbackUsed = true;
-        debugInfo.finalFallbackResults = finalResults.length;
-      } catch (finalError) {
-        debugInfo.finalFallbackError = finalError.message;
-        topCouponUsers = [];
-      }
-    }
-
-    // Calculate total metrics
-    const totalDiscountGiven = couponPerformance.reduce((sum, coupon) => 
-      sum + coupon.totalDiscountGiven, 0);
-    
-    const totalOrdersWithCoupons = couponPerformance.reduce((sum, coupon) => 
-      sum + coupon.successfulOrders, 0);
-
-    const response = {
+    return res.json({
       success: true,
       data: {
-        topCoupons: couponPerformance,
-        couponConversion: couponConversion,
-        discountImpact: discountImpact,
-        topCouponUsers: topCouponUsers,
-        summary: {
-          ...couponSummary,
-          totalDiscountGivenInPeriod: Math.round(totalDiscountGiven * 100) / 100,
-          totalOrdersWithCoupons: totalOrdersWithCoupons,
-          avgDiscountPerOrder: totalOrdersWithCoupons > 0 ? 
-            Math.round((totalDiscountGiven / totalOrdersWithCoupons) * 100) / 100 : 0
+        topCoupons: topCoupons.map(c => ({
+          id: c.id,
+          code: c.code,
+          name: c.name,
+          type: c.type,
+          value: parseFloat(c.value) || 0,
+          usedCount: parseInt(c.usedCount) || 0,
+          ordersCount: parseInt(c.orders_count) || 0
+        })),
+        orderStats: orderStats.map(s => ({
+          type: s.type,
+          count: parseInt(s.count) || 0,
+          avgOrderValue: parseFloat(s.avg_order_value) || 0
+        })),
+        topUsers: topUsers.map(u => ({
+          id: u.id,
+          name: `${u.firstName || ''} ${u.lastName || ''}`.trim() || 'Unknown',
+          ordersCount: parseInt(u.orders_count) || 0,
+          totalSavings: parseFloat(u.total_savings) || 0
+        })),
+        discountSummary: {
+          ordersWithDiscount: parseInt(discountSummary.orders_with_discount) || 0,
+          totalDiscountGiven: parseFloat(discountSummary.total_discount_given) || 0,
+          avgDiscountPerOrder: Math.round(parseFloat(discountSummary.avg_discount_per_order) * 100) / 100 || 0,
+          totalOrderValueWithCoupons: parseFloat(discountSummary.total_order_value_with_coupons) || 0
         },
-        period: `${periodInt} days`,
-        generatedAt: new Date().toISOString()
-      },
-      message: "Coupon analytics retrieved successfully",
-      ...(debug === 'true' ? { debug: debugInfo } : {})
-    };
-
-    return res.status(200).json(response);
+        summary: {
+          totalCoupons: parseInt(summary.total_coupons) || 0,
+          activeCoupons: parseInt(summary.active_coupons) || 0,
+          totalUsage: parseInt(summary.total_usage) || 0,
+          ordersWithCouponsInPeriod: parseInt(summary.orders_with_coupons_in_period) || 0
+        },
+        period: `${periodInt} days`
+      }
+    });
 
   } catch (error) {
     console.error("Coupon analytics error:", error);
-    
     return res.status(500).json({
       success: false,
-      message: "Failed to retrieve coupon analytics",
-      error: {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      }
+      message: "Failed to get coupon analytics",
+      error: error.message
     });
   }
 };
 
+
 export const getInventoryAnalytics = async (req, res) => {
   try {
-    const { categoryId } = req.query;
+    const { categoryId, period = 30 } = req.query;
+    
+    // Validate and parse period parameter
+    const validPeriods = [7, 14, 30, 60, 90];
+    const analyzePeriod = validPeriods.includes(parseInt(period)) ? parseInt(period) : 30;
+    
+    // Date calculations with proper timezone handling
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - analyzePeriod);
+    const extendedStartDate = new Date();
+    extendedStartDate.setDate(endDate.getDate() - (analyzePeriod * 2));
 
-    // Stock levels overview
+    // Base where condition with proper validation
+    const baseWhere = {
+      isActive: true,
+      stockQuantity: { [Op.gte]: 0 }, // Ensure no negative stock
+      ...(categoryId && { categoryId: parseInt(categoryId) || null })
+    };
+
+    // 1. Stock levels overview (optimized query)
     const stockOverview = await Product.findAll({
       attributes: [
-        [literal('CASE WHEN "stockQuantity" = 0 THEN \'Out of Stock\' WHEN "stockQuantity" <= "lowStockThreshold" THEN \'Low Stock\' ELSE \'In Stock\' END'), 'stockStatus'],
+        [literal(`
+          CASE 
+            WHEN "stockQuantity" = 0 THEN 'Out of Stock'
+            WHEN "lowStockThreshold" IS NOT NULL AND "stockQuantity" <= "lowStockThreshold" THEN 'Low Stock'
+            WHEN "lowStockThreshold" IS NOT NULL AND "stockQuantity" <= ("lowStockThreshold" * 2) THEN 'Medium Stock'
+            WHEN "stockQuantity" <= 5 THEN 'Low Stock'
+            WHEN "stockQuantity" <= 20 THEN 'Medium Stock'
+            ELSE 'High Stock'
+          END
+        `), 'stockStatus'],
         [fn('COUNT', col('id')), 'productCount'],
-        [fn('SUM', col('stockQuantity')), 'totalStock']
+        [fn('SUM', col('stockQuantity')), 'totalStock'],
+        [fn('AVG', col('stockQuantity')), 'avgStock'],
+        [fn('SUM', literal(`
+          CASE 
+            WHEN "stockQuantity" > 0 AND "price" IS NOT NULL 
+            THEN "stockQuantity" * "price" 
+            ELSE 0 
+          END
+        `)), 'stockValue']
       ],
-      where: {
-        isActive: true,
-        ...(categoryId && { categoryId })
-      },
-      group: [literal('CASE WHEN "stockQuantity" = 0 THEN \'Out of Stock\' WHEN "stockQuantity" <= "lowStockThreshold" THEN \'Low Stock\' ELSE \'In Stock\' END')],
+      where: baseWhere,
+      group: ['stockStatus'],
       raw: true
     });
 
-    // Top moving products (last 30 days)
-    const topMovingProducts = await Product.findAll({
+    // 2. Top moving products (optimized approach)
+    // First get top selling product IDs with sales data
+    const topSalesData = await OrderItem.findAll({
       attributes: [
-        'id', 'name', 'stockQuantity', 'lowStockThreshold',
-        [fn('COALESCE', fn('SUM', col('orderItems.quantity')), 0), 'soldQuantity']
+        'productId',
+        [fn('SUM', col('quantity')), 'soldQuantity'],
+        [fn('SUM', literal('quantity * price')), 'revenue']
       ],
-      include: [
-        {
-          model: Category,
-          as: 'category',
-          attributes: ['name']
+      include: [{
+        model: Order,
+        as: 'order',
+        attributes: [],
+        where: {
+          createdAt: { [Op.between]: [startDate, endDate] },
+          status: { [Op.in]: ['confirmed', 'processing', 'shipped', 'delivered'] }
         },
-        {
-          model: OrderItem,
-          as: 'orderItems',
-          attributes: [],
-          include: [{
-            model: Order,
-            as: 'order',
-            attributes: [],
-            where: {
-              createdAt: { [Op.gte]: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
-              status: ['confirmed', 'processing', 'shipped', 'delivered']
-            }
-          }]
-        }
-      ],
-      where: {
-        isActive: true,
-        ...(categoryId && { categoryId })
-      },
-      group: ['Product.id', 'category.id'],
-      order: [[literal('soldQuantity'), 'DESC']],
-      limit: 20
+        required: true
+      }],
+      group: ['productId'],
+      order: [[literal('"soldQuantity"'), 'DESC']],
+      limit: 20,
+      raw: true
     });
 
-    // Slow moving products
-    const slowMovingProducts = await Product.findAll({
+    // Then fetch complete product data for these top sellers
+    const topProductIds = topSalesData.map(item => item.productId);
+    let topProducts = [];
+    let processedTopMoving = [];
+
+    if (topProductIds.length > 0) {
+      topProducts = await Product.findAll({
+        attributes: ['id', 'name', 'sku', 'stockQuantity', 'lowStockThreshold', 'price', 'categoryId'],
+        include: [{
+          model: Category,
+          as: 'category',
+          attributes: ['name', 'slug']
+        }],
+        where: {
+          ...baseWhere,
+          id: { [Op.in]: topProductIds }
+        },
+        raw: true
+      });
+
+      // Combine the data
+      processedTopMoving = topSalesData.map(salesItem => {
+        const product = topProducts.find(p => p.id === salesItem.productId) || {};
+        const soldQty = parseInt(salesItem.soldQuantity) || 0;
+        const stockQty = product.stockQuantity || 0;
+        const revenue = parseFloat(salesItem.revenue) || 0;
+        
+        // Calculate metrics with safeguards
+        const dailySalesRate = soldQty / analyzePeriod;
+        const turnoverRate = stockQty > 0 
+          ? Math.min(10, (soldQty / stockQty) * (365 / analyzePeriod))
+          : soldQty > 0 ? 10 : 0; // Max turnover if no stock but has sales
+        const daysOfInventory = dailySalesRate > 0 
+          ? Math.min(365, Math.round(stockQty / dailySalesRate))
+          : stockQty > 0 ? 365 : 0; // Max days if no sales but has stock
+
+        return {
+          id: product.id,
+          name: product.name || 'Unknown Product',
+          sku: product.sku || null,
+          category: product['category.name'] || null,
+          stockQuantity: stockQty,
+          lowStockThreshold: product.lowStockThreshold || null,
+          soldQuantity: soldQty,
+          revenue: Math.round(revenue),
+          turnoverRate: Math.round(turnoverRate * 100) / 100,
+          daysOfInventory,
+          velocityScore: Math.round((soldQty / analyzePeriod) * 30 * 100) / 100
+        };
+      });
+    }
+
+    // 3. Slow moving products (optimized with better threshold)
+    const slowMovingThreshold = Math.max(1, Math.floor((analyzePeriod * 2) / 30));
+
+    // First get products with minimal sales in extended period
+    const slowSalesData = await OrderItem.findAll({
       attributes: [
-        'id', 'name', 'stockQuantity', 'price', 'createdAt',
-        [fn('COALESCE', fn('SUM', col('orderItems.quantity')), 0), 'soldQuantity']
+        'productId',
+        [fn('SUM', col('quantity')), 'soldQuantity']
       ],
-      include: [
-        {
+      include: [{
+        model: Order,
+        as: 'order',
+        attributes: [],
+        where: {
+          createdAt: { [Op.between]: [extendedStartDate, endDate] },
+          status: { [Op.in]: ['confirmed', 'processing', 'shipped', 'delivered'] }
+        },
+        required: true
+      }],
+      group: ['productId'],
+      having: literal(`SUM(quantity) <= ${slowMovingThreshold}`),
+      raw: true
+    });
+
+    // Then fetch product details for these slow movers
+    const slowProductIds = slowSalesData.map(item => item.productId);
+    let slowProducts = [];
+    let processedSlowMoving = [];
+
+    if (slowProductIds.length > 0) {
+      slowProducts = await Product.findAll({
+        attributes: [
+          'id', 'name', 'sku', 'stockQuantity', 'price', 'costPrice', 'createdAt', 'categoryId'
+        ],
+        include: [{
           model: Category,
           as: 'category',
           attributes: ['name']
+        }],
+        where: {
+          ...baseWhere,
+          id: { [Op.in]: slowProductIds },
+          createdAt: { [Op.lt]: new Date(endDate.getTime() - 14 * 24 * 60 * 60 * 1000) }
         },
-        {
-          model: OrderItem,
-          as: 'orderItems',
-          attributes: [],
-          include: [{
-            model: Order,
-            as: 'order',
-            attributes: [],
-            where: {
-              createdAt: { [Op.gte]: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000) },
-              status: ['confirmed', 'processing', 'shipped', 'delivered']
-            }
-          }]
-        }
+        raw: true
+      });
+
+      // Combine and process slow movers
+      processedSlowMoving = slowProducts.map(product => {
+        const salesItem = slowSalesData.find(item => item.productId === product.id) || {};
+        const soldQty = parseInt(salesItem.soldQuantity) || 0;
+        const costPrice = product.costPrice && product.costPrice > 0 
+          ? product.costPrice 
+          : (product.price || 0) * 0.7;
+        const tiedUpCapital = (product.stockQuantity || 0) * costPrice;
+        const daysInInventory = Math.floor((endDate - new Date(product.createdAt)) / (1000 * 60 * 60 * 24));
+        
+        return {
+          id: product.id,
+          name: product.name || 'Unknown Product',
+          sku: product.sku || null,
+          category: product['category.name'] || null,
+          stockQuantity: product.stockQuantity || 0,
+          price: parseFloat(product.price) || 0,
+          soldQuantity: soldQty,
+          daysInInventory,
+          tiedUpCapital: Math.round(tiedUpCapital),
+          riskScore: Math.min(10, Math.round((daysInInventory / 30) + (tiedUpCapital / 1000)))
+        };
+      }).sort((a, b) => {
+        // Sort by risk score then by tied up capital
+        if (a.riskScore !== b.riskScore) return b.riskScore - a.riskScore;
+        return b.tiedUpCapital - a.tiedUpCapital;
+      }).slice(0, 20);
+    }
+
+    // 4. Stock alerts (optimized query)
+    const stockAlerts = await Product.findAll({
+      attributes: [
+        'id', 'name', 'sku', 'stockQuantity', 'lowStockThreshold',
+        [literal(`
+          CASE 
+            WHEN "stockQuantity" = 0 THEN 'critical'
+            WHEN "lowStockThreshold" IS NOT NULL AND "stockQuantity" <= "lowStockThreshold" THEN 'warning'
+            WHEN "lowStockThreshold" IS NULL AND "stockQuantity" <= 5 THEN 'warning'
+            ELSE 'normal'
+          END
+        `), 'alertLevel']
       ],
+      include: [{
+        model: Category,
+        as: 'category',
+        attributes: ['name']
+      }],
       where: {
-        isActive: true,
-        stockQuantity: { [Op.gt]: 0 },
-        ...(categoryId && { categoryId })
+        ...baseWhere,
+        [Op.or]: [
+          { stockQuantity: 0 },
+          literal('"lowStockThreshold" IS NOT NULL AND "stockQuantity" <= "lowStockThreshold"'),
+          literal('"lowStockThreshold" IS NULL AND "stockQuantity" <= 5')
+        ]
       },
-      group: ['Product.id', 'category.id'],
-      having: literal('COALESCE(SUM(orderItems.quantity), 0) <= 2'),
-      order: [['createdAt', 'ASC']],
-      limit: 20
+      order: [
+        [literal('CASE WHEN "stockQuantity" = 0 THEN 0 ELSE 1 END'), 'ASC'],
+        ['stockQuantity', 'ASC']
+      ]
     });
+
+    // 5. Inventory value summary (with better cost handling)
+    const inventoryValue = await Product.findOne({
+      attributes: [
+        [fn('COUNT', col('id')), 'totalProducts'],
+        [fn('SUM', col('stockQuantity')), 'totalUnits'],
+        [fn('SUM', literal(`
+          CASE 
+            WHEN "stockQuantity" > 0 AND "price" IS NOT NULL 
+            THEN "stockQuantity" * "price" 
+            ELSE 0 
+          END
+        `)), 'totalRetailValue'],
+        [fn('SUM', literal(`
+          CASE 
+            WHEN "stockQuantity" > 0 AND "costPrice" IS NOT NULL AND "costPrice" > 0 
+            THEN "stockQuantity" * "costPrice"
+            WHEN "stockQuantity" > 0 AND "price" IS NOT NULL 
+            THEN "stockQuantity" * "price" * 0.7
+            ELSE 0
+          END
+        `)), 'totalCostValue'],
+        [fn('AVG', col('price')), 'avgPrice'],
+        [literal(`
+          SUM(
+            CASE 
+              WHEN "stockQuantity" > 0 AND "price" IS NOT NULL AND "costPrice" IS NOT NULL AND "costPrice" > 0 
+              THEN "stockQuantity" * ("price" - "costPrice")
+              WHEN "stockQuantity" > 0 AND "price" IS NOT NULL 
+              THEN "stockQuantity" * ("price" * 0.3)
+              ELSE 0
+            END
+          )
+        `), 'potentialProfit']
+      ],
+      where: baseWhere,
+      raw: true
+    });
+
+    // Process and format all results
+    const processedStockOverview = stockOverview.map(item => ({
+      stockStatus: item.stockStatus,
+      productCount: parseInt(item.productCount) || 0,
+      totalStock: parseInt(item.totalStock) || 0,
+      avgStock: Math.round(parseFloat(item.avgStock) || 0),
+      stockValue: Math.round(parseFloat(item.stockValue) || 0)
+    }));
+
+    const processedStockAlerts = stockAlerts.map(product => {
+      const alertLevel = product.getDataValue('alertLevel');
+      const stockQty = product.stockQuantity || 0;
+      const threshold = product.lowStockThreshold || 5; // Default threshold of 5
+      
+      return {
+        id: product.id,
+        name: product.name || 'Unknown Product',
+        sku: product.sku || null,
+        category: product.category?.name || null,
+        stockQuantity: stockQty,
+        lowStockThreshold: product.lowStockThreshold || null,
+        alertLevel: alertLevel,
+        stockoutRisk: stockQty === 0 ? 'immediate' : 
+                     stockQty <= threshold / 2 ? 'high' : 'medium'
+      };
+    });
+
+    // Summary statistics with proper rounding and null checks
+    const summary = {
+      totalProducts: parseInt(inventoryValue?.totalProducts) || 0,
+      totalUnits: parseInt(inventoryValue?.totalUnits) || 0,
+      totalRetailValue: Math.round(parseFloat(inventoryValue?.totalRetailValue) || 0),
+      totalCostValue: Math.round(parseFloat(inventoryValue?.totalCostValue) || 0),
+      avgPrice: Math.round(parseFloat(inventoryValue?.avgPrice) || 0),
+      potentialProfit: Math.round(parseFloat(inventoryValue?.potentialProfit) || 0),
+      criticalAlerts: processedStockAlerts.filter(p => p.alertLevel === 'critical').length,
+      warningAlerts: processedStockAlerts.filter(p => p.alertLevel === 'warning').length,
+      analyzePeriod
+    };
 
     return res.status(200).json({
       success: true,
       data: {
-        stockOverview: stockOverview.map(item => ({
-          stockStatus: item.stockStatus,
-          productCount: parseInt(item.productCount),
-          totalStock: parseInt(item.totalStock || 0)
-        })),
-        topMovingProducts: topMovingProducts.map(product => ({
-          id: product.id,
-          name: product.name,
-          category: product.category?.name,
-          stockQuantity: product.stockQuantity,
-          lowStockThreshold: product.lowStockThreshold,
-          soldQuantity: parseInt(product.getDataValue('soldQuantity')),
-          turnoverRate: product.stockQuantity > 0 ? 
-            Math.round((parseInt(product.getDataValue('soldQuantity')) / product.stockQuantity) * 100) / 100 : 0
-        })),
-        slowMovingProducts: slowMovingProducts.map(product => ({
-          id: product.id,
-          name: product.name,
-          category: product.category?.name,
-          stockQuantity: product.stockQuantity,
-          price: product.price,
-          soldQuantity: parseInt(product.getDataValue('soldQuantity')),
-          daysInInventory: Math.floor((new Date() - new Date(product.createdAt)) / (1000 * 60 * 60 * 24))
-        }))
+        summary,
+        stockOverview: processedStockOverview,
+        topMovingProducts: processedTopMoving,
+        slowMovingProducts: processedSlowMoving,
+        stockAlerts: processedStockAlerts,
+        metadata: {
+          analyzePeriod,
+          dateRange: {
+            start: startDate.toISOString().split('T')[0],
+            end: endDate.toISOString().split('T')[0]
+          },
+          filters: {
+            categoryId: categoryId || null
+          }
+        }
       },
       message: "Inventory analytics retrieved successfully"
     });
@@ -1720,7 +1576,7 @@ export const getInventoryAnalytics = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve inventory analytics",
-      error: error.message
+      error: process.env.NODE_ENV === 'development' ? error.message : 'Internal server error'
     });
   }
 };

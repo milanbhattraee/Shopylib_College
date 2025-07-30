@@ -990,6 +990,7 @@ export const applyCouponToOrder = async (couponCodes, userId, orderProducts, tra
                     usageCount: result.usageCount,
                     couponDetails: result.couponDetails,
                 });
+                            await coupon.increment("usedCount", { by: 1, transaction });
             } else {
                 failedCoupons.push({
                     couponId: coupon.id,
@@ -997,7 +998,10 @@ export const applyCouponToOrder = async (couponCodes, userId, orderProducts, tra
                     reason: result.message,
                 });
             }
+
+
         }
+        
 
         // Step 6: Return final result
         return {
@@ -1381,6 +1385,8 @@ export const applyCoupon = async (req, res) => {
         });
       }
     }
+
+     
 
     // Step 6: Return final result
     return res.json({
