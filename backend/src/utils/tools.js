@@ -22,5 +22,34 @@ function generateStrongPassword(length = 10) {
   return password.split('').sort(() => 0.5 - Math.random()).join('');
 }
 
+import NodeCache from "node-cache";
+const cache = new NodeCache({ stdTTL: 50000 }); // 50000 seconds = ~14 hours
 
-export { generateStrongPassword };
+async function getCurrencyRates() {
+  try {
+    // Check cache first
+    const cachedRates = cache.get("currencyRates");
+    if (cachedRates) {
+      console.log("Returning cached currency rates");
+      return cachedRates;
+    }
+
+    console.log("Fetching currency rates from API");
+
+    // If not cached, fetch from API
+    const response = await fetch("https://api.exchangerate-api.com/v4/latest/NPR");
+    const data = await response.json();
+
+    // Save to cache
+    cache.set("currencyRates", data.rates);
+
+    return data.rates;
+  } catch (error) {
+    console.error("Error fetching currency rates:", error);
+    throw new Error("Failed to fetch currency rates");
+  }
+}
+
+
+
+export { generateStrongPassword, getCurrencyRates };

@@ -16,6 +16,7 @@ import searchRouter from "./routes/search.route.js";
 import wishlistRouter from "./routes/wishlist.route.js";
 import authRouter from "./routes/auth.route.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
+import { getCurrencyRates } from "./utils/tools.js";
 
 const PORT = process.env.PORT || 8000;
 
@@ -38,6 +39,23 @@ app.get("/test", (req, res) => {
     status: "success",
     message: "Welcome to the Admin API",
   });
+});
+
+app.get("/currencyRates", async (req, res) => {
+  try {
+    const rates = await getCurrencyRates();
+    res.status(200).json({
+      success: true,
+      status: "Rates Fetched",
+      data: rates,
+    });
+  } catch (e) {
+    res.status(500).json({
+      success: false,
+      status: "Failed",
+      message: e.message,
+    });
+  }
 });
 
 // API routes
