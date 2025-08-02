@@ -1581,6 +1581,7 @@ export const getInventoryAnalytics = async (req, res) => {
   }
 };
 
+
 export const getCustomerAnalytics = async (req, res) => {
   try {
     const { period = '30' } = req.query;
@@ -1596,200 +1597,139 @@ export const getCustomerAnalytics = async (req, res) => {
 
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - periodInt);
-    startDate.setHours(0, 0, 0, 0); // Start of day
+    startDate.setHours(0, 0, 0, 0);
 
-    // Customer acquisition over time
-    const customerAcquisition = await User.findAll({
+    // 1. New customer registrations over time (accurate)
+    const customerRegistrations = await User.findAll({
       attributes: [
         [fn('DATE', col('createdAt')), 'date'],
-        [fn('COUNT', col('id')), 'newCustomers']
+        [fn('COUNT', col('id')), 'count']
       ],
       where: {
         role: 'customer',
         createdAt: { 
           [Op.gte]: startDate,
-          [Op.lte]: new Date() // Ensure we don't get future dates
+          [Op.lte]: new Date()
         }
       },
       group: [fn('DATE', col('createdAt'))],
       order: [[fn('DATE', col('createdAt')), 'ASC']],
       raw: true
-    }).catch(error => {
-      console.error("Customer acquisition query error:", error);
-      return [];
     });
 
-    // Customer lifetime value with better error handling
-    const customerLTV = await User.findAll({
-      attributes: [
-        'id', 'firstName', 'lastName',
-        [fn('COUNT', col('orders.id')), 'totalOrders'],
-        [fn('COALESCE', fn('SUM', col('orders.subtotal')), 0), 'totalSpent'],
-        [fn('COALESCE', fn('AVG', col('orders.subtotal')), 0), 'avgOrderValue'],
-        [fn('MIN', col('orders.createdAt')), 'firstOrder'],
-        [fn('MAX', col('orders.createdAt')), 'lastOrder']
-      ],
-      include: [{
-        model: Order,
-        as: 'orders',
-        attributes: [],
-        where: {
-          status: {
-            [Op.in]: ['confirmed', 'processing', 'shipped', 'delivered']
-          }
-        },
-        required: false // LEFT JOIN instead of INNER JOIN
-      }],
-      where: { 
-        role: 'customer',
-        firstName: { [Op.ne]: null },
-        lastName: { [Op.ne]: null }
-      },
-      group: ['User.id', 'User.firstName', 'User.lastName'],
-      having: literal('COUNT(orders.id) > 0'),
-      order: [[literal('CAST(COALESCE(SUM(orders.subtotal), 0) AS DECIMAL)'), 'DESC']],
-      limit: 50,
-      raw: true
-    }).catch(error => {
-      console.error("Customer LTV query error:", error);
-      return [];
-    });
-
-    // Customer segmentation with better SQL and error handling
-    const customerSegmentation = await sequelize.query(`
+    // 2. Top spending customers in this period (show all customers, even without names)
+    const topCustomers = await sequelize.query(`
       SELECT 
-        CASE 
-          WHEN COALESCE(order_count, 0) = 0 THEN 'No Orders'
-          WHEN order_count = 1 THEN 'One-time'
-          WHEN order_count BETWEEN 2 AND 5 THEN 'Regular'
-          WHEN order_count BETWEEN 6 AND 10 THEN 'Loyal'
-          ELSE 'VIP'
-        END as segment,
-        COUNT(*) as customer_count,
-        COALESCE(AVG(total_spent), 0) as avg_spent
-      FROM (
-        SELECT 
-          u.id,
-          COUNT(o.id) as order_count,
-          COALESCE(SUM(o.subtotal), 0) as total_spent
-        FROM users u
-        LEFT JOIN orders o ON u.id = o."userId" 
-          AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
-          AND o."deletedAt" IS NULL
-        WHERE u.role = 'customer' 
-          AND u."deletedAt" IS NULL
-        GROUP BY u.id
-      ) customer_stats
-      GROUP BY 
-        CASE 
-          WHEN COALESCE(order_count, 0) = 0 THEN 'No Orders'
-          WHEN order_count = 1 THEN 'One-time'
-          WHEN order_count BETWEEN 2 AND 5 THEN 'Regular'
-          WHEN order_count BETWEEN 6 AND 10 THEN 'Loyal'
-          ELSE 'VIP'
-        END
-      ORDER BY 
-        CASE 
-          WHEN segment = 'VIP' THEN 1
-          WHEN segment = 'Loyal' THEN 2
-          WHEN segment = 'Regular' THEN 3
-          WHEN segment = 'One-time' THEN 4
-          ELSE 5
-        END
-    `, { 
+        u.id,
+        COALESCE(u."firstName", 'Unknown') as "firstName",
+        COALESCE(u."lastName", 'Customer') as "lastName",
+        COUNT(o.id) as "orderCount",
+        COALESCE(SUM(o.subtotal + o."shippingAmount" - o."discountAmount"), 0) as "totalSpent"
+      FROM users u
+      INNER JOIN orders o ON u.id = o."userId" 
+        AND o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+        AND o."createdAt" >= :startDate
+      WHERE u.role = 'customer' 
+        AND u."deletedAt" IS NULL
+      GROUP BY u.id, u."firstName", u."lastName"
+      ORDER BY COALESCE(SUM(o.subtotal + o."shippingAmount" - o."discountAmount"), 0) DESC
+      LIMIT 10
+    `, {
       type: sequelize.QueryTypes.SELECT,
-      logging: console.log // Enable logging for debugging
-    }).catch(error => {
-      console.error("Customer segmentation query error:", error);
-      return [];
+      replacements: { startDate }
     });
 
-    // Geographic distribution with null checks and better error handling
-    const geographicDistribution = await User.findAll({
+    // 3. Order activity summary for the period (accurate final amounts)
+    const orderStats = await sequelize.query(`
+      SELECT 
+        COUNT(DISTINCT o."userId") as active_customers,
+        COUNT(o.id) as total_orders,
+        COALESCE(SUM(o.subtotal + o."shippingAmount" - o."discountAmount"), 0) as total_revenue,
+        COALESCE(AVG(o.subtotal + o."shippingAmount" - o."discountAmount"), 0) as avg_order_value
+      FROM orders o
+      WHERE o.status IN ('confirmed', 'processing', 'shipped', 'delivered')
+        AND o."createdAt" >= :startDate
+    `, {
+      type: sequelize.QueryTypes.SELECT,
+      replacements: { startDate }
+    });
+
+    // 4. Customer location distribution (accurate for customers with addresses)
+    const topCities = await User.findAll({
       attributes: [
-        [literal("COALESCE(address->>'city', 'Unknown')"), 'city'],
-        [literal("COALESCE(address->>'province', 'Unknown')"), 'province'],
-        [fn('COUNT', col('id')), 'customerCount']
+        [literal("address->>'city'"), 'city'],
+        [fn('COUNT', col('id')), 'count']
       ],
       where: {
         role: 'customer',
-        [Op.or]: [
-          { address: { [Op.ne]: null } },
-          { address: { [Op.ne]: {} } }
+        address: { [Op.ne]: null },
+        [Op.and]: [
+          literal("address->>'city' IS NOT NULL"),
+          literal("address->>'city' != ''")
         ]
       },
-      group: [
-        literal("COALESCE(address->>'city', 'Unknown')"), 
-        literal("COALESCE(address->>'province', 'Unknown')")
-      ],
+      group: [literal("address->>'city'")],
       order: [[fn('COUNT', col('id')), 'DESC']],
-      limit: 20,
+      limit: 10,
       raw: true
-    }).catch(error => {
-      console.error("Geographic distribution query error:", error);
-      return [];
     });
 
-    // Helper function to safely parse numbers
-    const safeParseFloat = (value, defaultValue = 0) => {
-      const parsed = parseFloat(value);
-      return isNaN(parsed) ? defaultValue : parsed;
-    };
+    // 5. Basic customer counts (accurate)
+    const totalCustomers = await User.count({
+      where: { role: 'customer' }
+    });
 
-    const safeParseInt = (value, defaultValue = 0) => {
-      const parsed = parseInt(value);
-      return isNaN(parsed) ? defaultValue : parsed;
-    };
+    const newCustomersInPeriod = await User.count({
+      where: {
+        role: 'customer',
+        createdAt: { [Op.gte]: startDate }
+      }
+    });
 
-    // Format response data with null checks
-    const formattedResponse = {
+    // Format response with only accurate data
+    const stats = orderStats[0] || {};
+    
+    const response = {
       success: true,
       data: {
-        customerAcquisition: (customerAcquisition || []).map(item => ({
-          date: item?.date || null,
-          newCustomers: safeParseInt(item?.newCustomers)
-        })),
-        topCustomers: (customerLTV || []).slice(0, 10).map(customer => ({
-          id: customer?.id || null,
-          name: `${customer?.firstName || 'Unknown'} ${customer?.lastName || ''}`.trim(),
-          totalOrders: safeParseInt(customer?.totalOrders),
-          totalSpent: Math.round(safeParseFloat(customer?.totalSpent) * 100) / 100,
-          avgOrderValue: Math.round(safeParseFloat(customer?.avgOrderValue) * 100) / 100,
-          firstOrder: customer?.firstOrder || null,
-          lastOrder: customer?.lastOrder || null
-        })),
-        customerSegmentation: (customerSegmentation || []).map(segment => ({
-          segment: segment?.segment || 'Unknown',
-          customerCount: safeParseInt(segment?.customer_count),
-          avgSpent: Math.round(safeParseFloat(segment?.avg_spent) * 100) / 100
-        })),
-        geographicDistribution: (geographicDistribution || []).map(geo => ({
-          city: geo?.city || 'Unknown',
-          province: geo?.province || 'Unknown',
-          customerCount: safeParseInt(geo?.customerCount)
-        })),
         period: `${periodInt} days`,
+        summary: {
+          totalCustomers,
+          newCustomersInPeriod,
+          activeCustomersInPeriod: parseInt(stats.active_customers) || 0,
+          totalOrdersInPeriod: parseInt(stats.total_orders) || 0,
+          totalRevenueInPeriod: Math.round(parseFloat(stats.total_revenue || 0) * 100) / 100,
+          avgOrderValueInPeriod: Math.round(parseFloat(stats.avg_order_value || 0) * 100) / 100
+        },
+        customerRegistrations: customerRegistrations.map(item => ({
+          date: item.date,
+          count: parseInt(item.count) || 0
+        })),
+        topCustomersBySpending: topCustomers.map(customer => ({
+          id: customer.id,
+          name: `${customer.firstName} ${customer.lastName}`.trim(),
+          orderCount: parseInt(customer.orderCount) || 0,
+          totalSpent: Math.round(parseFloat(customer.totalSpent || 0) * 100) / 100
+        })),
+        topCitiesByCustomerCount: topCities
+          .filter(city => city.city && city.city.trim() !== '')
+          .map(city => ({
+            city: city.city.trim(),
+            customerCount: parseInt(city.count) || 0
+          })),
         generatedAt: new Date().toISOString()
-      },
-      message: "Customer analytics retrieved successfully"
+      }
     };
 
-    return res.status(200).json(formattedResponse);
+    return res.status(200).json(response);
 
   } catch (error) {
     console.error("Customer analytics error:", error);
     
-    // Return more specific error information in development
-    const isDevelopment = process.env.NODE_ENV === 'development';
-    
     return res.status(500).json({
       success: false,
       message: "Failed to retrieve customer analytics",
-      error: isDevelopment ? {
-        message: error.message,
-        stack: error.stack,
-        name: error.name
-      } : "Internal server error"
+      error: process.env.NODE_ENV === 'development' ? error.message : "Internal server error"
     });
   }
 };
@@ -1805,13 +1745,13 @@ export const getOrderAnalytics = async (req, res) => {
       ...(status && { status })
     };
 
-    // Order trends over time
+    // Basic order trends over time
     const orderTrends = await Order.findAll({
       attributes: [
         [fn('DATE_TRUNC', 'day', col('createdAt')), 'date'],
         [fn('COUNT', col('id')), 'orderCount'],
-        [fn('SUM', col('subtotal')), 'revenue'],
-        [fn('AVG', col('subtotal')), 'avgOrderValue']
+        [fn('SUM', literal('subtotal + "shippingAmount" - "discountAmount"')), 'revenue'],
+        [fn('AVG', literal('subtotal + "shippingAmount" - "discountAmount"')), 'avgOrderValue']
       ],
       where: whereClause,
       group: [fn('DATE_TRUNC', 'day', col('createdAt'))],
@@ -1824,63 +1764,58 @@ export const getOrderAnalytics = async (req, res) => {
       attributes: [
         'status',
         [fn('COUNT', col('id')), 'count'],
-        [fn('SUM', col('subtotal')), 'revenue']
+        [fn('SUM', literal('subtotal + "shippingAmount" - "discountAmount"')), 'revenue']
       ],
       where: { createdAt: { [Op.gte]: startDate } },
       group: ['status'],
       raw: true
     });
 
-    // Payment method analysis
-    const paymentMethodAnalysis = await Order.findAll({
+    // Payment method breakdown
+    const paymentMethods = await Order.findAll({
       attributes: [
         'paymentMethod',
-        'paymentStatus',
         [fn('COUNT', col('id')), 'count'],
-        [fn('SUM', col('subtotal')), 'revenue']
+        [fn('SUM', literal('subtotal + "shippingAmount" - "discountAmount"')), 'revenue']
       ],
       where: { createdAt: { [Op.gte]: startDate } },
-      group: ['paymentMethod', 'paymentStatus'],
+      group: ['paymentMethod'],
       raw: true
     });
 
-    // Order fulfillment times
-    const fulfillmentTimes = await sequelize.query(`
-      SELECT 
-        AVG(EXTRACT(EPOCH FROM ("shippedAt" - "createdAt"))/3600) as avg_hours_to_ship,
-        AVG(EXTRACT(EPOCH FROM ("deliveredAt" - "createdAt"))/3600) as avg_hours_to_deliver,
-        COUNT(CASE WHEN "shippedAt" IS NOT NULL THEN 1 END) as shipped_orders,
-        COUNT(CASE WHEN "deliveredAt" IS NOT NULL THEN 1 END) as delivered_orders
-      FROM orders 
-      WHERE "createdAt" >= :startDate
-    `, {
-      replacements: { startDate },
-      type: sequelize.QueryTypes.SELECT
-    });
-
-    // Top customers by order frequency
-    const topCustomersByOrders = await User.findAll({
+    // Summary statistics - More accurate total revenue calculation
+    const totalOrders = await Order.count({ where: whereClause });
+    const revenueResult = await Order.findAll({
       attributes: [
-        'id', 'firstName', 'lastName',
-        [fn('COUNT', col('orders.id')), 'orderCount'],
-        [fn('SUM', col('orders.subtotal')), 'totalSpent'],
-        [fn('AVG', col('orders.subtotal')), 'avgOrderValue']
+        [fn('SUM', literal('subtotal + "shippingAmount" - "discountAmount"')), 'totalRevenue']
       ],
-      include: [{
-        model: Order,
-        as: 'orders',
-        attributes: [],
-        where: whereClause
-      }],
-      where: { role: 'customer' },
-      group: ['User.id'],
-      order: [[literal('orderCount'), 'DESC']],
-      limit: 10
+      where: whereClause,
+      raw: true
+    });
+    const totalRevenue = parseFloat(revenueResult[0]?.totalRevenue || 0);
+    const avgOrderValue = totalOrders > 0 ? totalRevenue / totalOrders : 0;
+
+    // Recent orders count by status
+    const pendingOrders = await Order.count({ 
+      where: { ...whereClause, status: 'pending' } 
+    });
+    const processingOrders = await Order.count({ 
+      where: { 
+        ...whereClause, 
+        status: { [Op.in]: ['confirmed', 'processing'] } 
+      } 
     });
 
     return res.status(200).json({
       success: true,
       data: {
+        summary: {
+          totalOrders,
+          totalRevenue: Math.round(totalRevenue * 100) / 100,
+          avgOrderValue: Math.round(avgOrderValue * 100) / 100,
+          pendingOrders,
+          processingOrders
+        },
         orderTrends: orderTrends.map(trend => ({
           date: trend.date,
           orderCount: parseInt(trend.orderCount),
@@ -1892,24 +1827,10 @@ export const getOrderAnalytics = async (req, res) => {
           count: parseInt(item.count),
           revenue: Math.round(parseFloat(item.revenue || 0) * 100) / 100
         })),
-        paymentMethodAnalysis: paymentMethodAnalysis.map(item => ({
-          paymentMethod: item.paymentMethod,
-          paymentStatus: item.paymentStatus,
+        paymentMethods: paymentMethods.map(item => ({
+          method: item.paymentMethod,
           count: parseInt(item.count),
           revenue: Math.round(parseFloat(item.revenue || 0) * 100) / 100
-        })),
-        fulfillmentMetrics: {
-          avgHoursToShip: Math.round(parseFloat(fulfillmentTimes[0]?.avg_hours_to_ship || 0) * 100) / 100,
-          avgHoursToDeliver: Math.round(parseFloat(fulfillmentTimes[0]?.avg_hours_to_deliver || 0) * 100) / 100,
-          shippedOrders: parseInt(fulfillmentTimes[0]?.shipped_orders || 0),
-          deliveredOrders: parseInt(fulfillmentTimes[0]?.delivered_orders || 0)
-        },
-        topCustomers: topCustomersByOrders.map(customer => ({
-          id: customer.id,
-          name: `${customer.firstName} ${customer.lastName}`,
-          orderCount: parseInt(customer.getDataValue('orderCount')),
-          totalSpent: Math.round(parseFloat(customer.getDataValue('totalSpent')) * 100) / 100,
-          avgOrderValue: Math.round(parseFloat(customer.getDataValue('avgOrderValue')) * 100) / 100
         })),
         period: `${period} days`
       },
@@ -1948,7 +1869,7 @@ export const getReviewAnalytics = async (req, res) => {
       raw: true
     });
 
-    // Rating distribution
+    // Rating distribution (1-5 stars)
     const ratingDistribution = await Review.findAll({
       attributes: [
         'rating',
@@ -1960,26 +1881,7 @@ export const getReviewAnalytics = async (req, res) => {
       raw: true
     });
 
-    // Top rated products
-    const topRatedProducts = await Product.findAll({
-      attributes: [
-        'id', 'name',
-        [fn('COUNT', col('reviews.id')), 'reviewCount'],
-        [fn('AVG', col('reviews.rating')), 'avgRating']
-      ],
-      include: [{
-        model: Review,
-        as: 'reviews',
-        attributes: [],
-        where: { createdAt: { [Op.gte]: startDate } }
-      }],
-      group: ['Product.id'],
-      having: literal('COUNT(reviews.id) >= 3'),
-      order: [[literal('avgRating'), 'DESC']],
-      limit: 20
-    });
-
-    // Most reviewed products
+    // Most reviewed products (simplified - no minimum review requirement)
     const mostReviewedProducts = await Product.findAll({
       attributes: [
         'id', 'name',
@@ -1994,50 +1896,34 @@ export const getReviewAnalytics = async (req, res) => {
       }],
       group: ['Product.id'],
       order: [[literal('reviewCount'), 'DESC']],
-      limit: 20
+      limit: 10
     });
 
-    // Review trends over time
-    const reviewTrends = await Review.findAll({
-      attributes: [
-        [fn('DATE_TRUNC', 'day', col('createdAt')), 'date'],
-        [fn('COUNT', col('id')), 'reviewCount'],
-        [fn('AVG', col('rating')), 'avgRating']
-      ],
-      where: whereClause,
-      group: [fn('DATE_TRUNC', 'day', col('createdAt'))],
-      order: [[fn('DATE_TRUNC', 'day', col('createdAt')), 'ASC']],
-      raw: true
-    });
+    // Summary calculations
+    const totalReviews = parseInt(reviewStats[0]?.totalReviews || 0);
+    const avgRating = Math.round(parseFloat(reviewStats[0]?.avgRating || 0) * 100) / 100;
+    const reviewsWithComments = parseInt(reviewStats[0]?.reviewsWithComments || 0);
+    const commentPercentage = totalReviews > 0 ? Math.round((reviewsWithComments / totalReviews) * 100) : 0;
 
     return res.status(200).json({
       success: true,
       data: {
-        reviewStats: {
-          totalReviews: parseInt(reviewStats[0]?.totalReviews || 0),
-          avgRating: Math.round(parseFloat(reviewStats[0]?.avgRating || 0) * 100) / 100,
-          reviewsWithComments: parseInt(reviewStats[0]?.reviewsWithComments || 0)
+        summary: {
+          totalReviews,
+          avgRating,
+          reviewsWithComments,
+          commentPercentage
         },
         ratingDistribution: ratingDistribution.map(item => ({
           rating: item.rating,
-          count: parseInt(item.count)
-        })),
-        topRatedProducts: topRatedProducts.map(product => ({
-          id: product.id,
-          name: product.name,
-          reviewCount: parseInt(product.getDataValue('reviewCount')),
-          avgRating: Math.round(parseFloat(product.getDataValue('avgRating')) * 100) / 100
+          count: parseInt(item.count),
+          percentage: totalReviews > 0 ? Math.round((parseInt(item.count) / totalReviews) * 100) : 0
         })),
         mostReviewedProducts: mostReviewedProducts.map(product => ({
           id: product.id,
           name: product.name,
           reviewCount: parseInt(product.getDataValue('reviewCount')),
           avgRating: Math.round(parseFloat(product.getDataValue('avgRating')) * 100) / 100
-        })),
-        reviewTrends: reviewTrends.map(trend => ({
-          date: trend.date,
-          reviewCount: parseInt(trend.reviewCount),
-          avgRating: Math.round(parseFloat(trend.avgRating) * 100) / 100
         })),
         period: `${period} days`
       },
