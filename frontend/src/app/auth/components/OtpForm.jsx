@@ -1,9 +1,7 @@
 "use client";
 import React, { useState, useRef } from "react";
 import { IoMdClose } from "react-icons/io";
-import { useDispatch, useSelector } from "react-redux";
 import { useRouter } from "next/navigation";
-import { verifyOtpAsync, generateNewOtpAsync } from "../authSlice";
 
 const OtpForm = ({closePopup}) => {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
@@ -11,9 +9,8 @@ const OtpForm = ({closePopup}) => {
   const [timer, setTimer] = useState(60);
   const [isCooldown, setIsCooldown] = useState(true);
   const inputRefs = useRef([]);
-  const dispatch = useDispatch();
-  const { user } = useSelector((store) => store.user);
   const router = useRouter();
+  const user = null; // TODO: Get user data from context or props
 
   React.useEffect(() => {
     let interval;
@@ -72,9 +69,8 @@ const OtpForm = ({closePopup}) => {
     setErrorMessage("");
 
     try {
-      const result = await dispatch(
-        verifyOtpAsync({ otp: otp.join(""), userId: user.id })
-      ).unwrap();
+      // TODO: Replace with API call
+      console.log("OTP submitted:", otp.join(""));
       router.push("/");
       closePopup();
     } catch (error) {
@@ -89,11 +85,10 @@ const OtpForm = ({closePopup}) => {
 
   const handleResendOtp = async () => {
     try {
-     const response = await dispatch(generateNewOtpAsync(user.id)).unwrap();
-      if(response){
-        setIsCooldown(true);
+      // TODO: Replace with API call
+      console.log("Resending OTP...");
+      setIsCooldown(true);
       setTimer(60);
-      }
     } catch (error) {
       console.error("Error resending OTP:", error);
       setErrorMessage(error?.message || "Failed to resend OTP. Try again later.");

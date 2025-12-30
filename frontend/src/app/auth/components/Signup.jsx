@@ -4,14 +4,9 @@ import { useForm } from "react-hook-form";
 import { FcGoogle } from "react-icons/fc";
 import { IoMdClose } from "react-icons/io";
 import { IoEye, IoEyeOff } from "react-icons/io5";
-import { useDispatch } from "react-redux";
-import { generateNewOtpAsync, registerUserAsync } from "../authSlice";
 import Link from "next/link";
- 
 
-const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
- 
-
+const SignupForm = ({ closePopup, openLoginPopup, openOtpPopup }) => {
   const [show, setShow] = useState(false);
   const [type, setType] = useState("password");
   const [error, setError] = useState(null);
@@ -31,17 +26,9 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
     setError(null);
 
     try {
-      const userDetails = await dispatch(registerUserAsync(data));
-     
-      console.log(userDetails,'nesldkf');
-     
-      if (userDetails.payload.user && !(userDetails.payload.user.isVerified) ) {
-        await dispatch(generateNewOtpAsync(userDetails.payload.user.id)); 
-        
-        openOtpPopup();
-        return;
-      }
-     
+      // TODO: Replace with API call
+      console.log("Form data:", data);
+      openOtpPopup();
     } catch (error) {
       setError(error.response?.data?.message || "Failed to register");
       console.error("Error creating user:", error);
@@ -57,12 +44,10 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
     formState: { errors },
   } = useForm();
 
-  const dispatch = useDispatch();
-
   return (
     <>
       {
-        <div className="fixed inset-0 flex items-center justify-center bg-black backdrop-blur-md bg-opacity-50 z-50">
+        <div className="fixed inset-0 flex items-center justify-center bg-black/30 backdrop-blur-sm z-50">
           <div className="bg-white relative rounded-2xl shadow-xl p-8 w-[500px]">
             <IoMdClose
               className="absolute right-8 top-8 text-3xl text-blue-600 cursor-pointer transform transition-transform duration-300 hover:rotate-90"
@@ -80,39 +65,39 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="relative mb-3 w-full h-10">
                   <input
-                    className="peer w-full h-full bg-transparent text-cyan-gray-700 font-sans font-normal focus:outline-0 disabled:bg-cyan-gray-50 disabled:border-0 transition-all placeholder-shown:border placeholder-shown:border-cyan-gray-200 placeholder-shown:border-t-cyan-gray-200 border focus:border-2 focus:border-t-transparent text-sm px-3 py-2.5 rounded-[7px] border-cyan-gray-200 focus:border-cyan-500 "
-                    id="fullname"
-                    type="text"
+                    className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                     placeholder=" "
                     {...register("displayName", {
                       required: "Full Name is required",
                     })}
                   />
-                  <label className="flex w-full h-full select-none pointer-events-none  absolute left-0 font-normal !overflow-visible truncate peer-placeholder-shown:text-cyan-gray-500 leading-tight peer-focus:leading-tight peer-disabled:text-transparent peer-disabled:peer-placeholder-shown:text-cyan-gray-500 transition-all -top-1.5 peer-placeholder-shown:text-sm text-[11px] peer-focus:text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 peer-placeholder-shown:before:border-transparent  before:rounded-tl-md before:border-t peer-focus:before:border-t-2 before:border-l peer-focus:before:border-l-2 before:pointer-events-none before:transition-all peer-disabled:before:border-transparent after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 peer-placeholder-shown:after:border-transparent after:rounded-tr-md after:border-t peer-focus:after:border-t-2 after:border-r peer-focus:after:border-r-2 after:pointer-events-none after:transition-all peer-disabled:after:border-transparent peer-placeholder-shown:leading-[3.75] text-cyan-gray-400 peer-focus:text-cyan-500 before:border-cyan-gray-200 peer-focus:before:!border-cyan-500 after:border-cyan-gray-200 peer-focus:after:!border-cyan-500">
+                  <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
                     Full Name
                   </label>
-                  <p className="text-red-500 text-xs px-3 ">
-                    {errors?.fullname?.message}
+                  <p className="text-red-500 text-xs px-3">
+                    {errors?.displayName?.message}
                   </p>
                 </div>
                 <div className="relative mb-3 w-full h-10">
                   <input
-                    className="peer w-full h-full bg-transparent text-cyan-gray-700 font-sans font-normal focus:outline-0 disabled:bg-cyan-gray-50 disabled:border-0 transition-all placeholder-shown:border placeholder-shown:border-cyan-gray-200 placeholder-shown:border-t-cyan-gray-200 border focus:border-2 focus:border-t-transparent text-sm px-3 py-2.5 rounded-[7px] border-cyan-gray-200 focus:border-cyan-500"
+                    className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                     placeholder=" "
                     {...register("phoneNumber", {
-                      required: "Full Name is required",
+                      required: "Phone is required",
                     })}
                   />
-                  <label className="flex w-full h-full select-none pointer-events-none absolute left-0 font-normal !overflow-visible truncate peer-placeholder-shown:text-cyan-gray-500 leading-tight peer-focus:leading-tight peer-disabled:text-transparent peer-disabled:peer-placeholder-shown:text-cyan-gray-500 transition-all -top-1.5 peer-placeholder-shown:text-sm text-[11px] peer-focus:text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 peer-placeholder-shown:before:border-transparent before:rounded-tl-md before:border-t peer-focus:before:border-t-2 before:border-l peer-focus:before:border-l-2 before:pointer-events-none before:transition-all peer-disabled:before:border-transparent after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 peer-placeholder-shown:after:border-transparent after:rounded-tr-md after:border-t peer-focus:after:border-t-2 after:border-r peer-focus:after:border-r-2 after:pointer-events-none after:transition-all peer-disabled:after:border-transparent peer-placeholder-shown:leading-[3.75] text-cyan-gray-400 peer-focus:text-cyan-500 before:border-cyan-gray-200 peer-focus:before:!border-cyan-500 after:border-cyan-gray-200 peer-focus:after:!border-cyan-500">
+                  <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
                     Phone
                   </label>
+                  <p className="text-red-500 text-xs px-3">
+                    {errors?.phoneNumber?.message}
+                  </p>
                 </div>
                 <div className="relative mb-3 w-full h-10">
                   <input
                     type={type}
-                    className=" peer w-full h-full bg-transparent text-cyan-gray-700 font-sans font-normal outline outline-0 focus:outline-0 disabled:bg-cyan-gray-50 disabled:border-0 transition-all placeholder-shown:border placeholder-shown:border-cyan-gray-200 placeholder-shown:border-t-cyan-gray-200 border focus:border-2 focus:border-t-transparent text-sm px-3 py-2.5 rounded-[7px] border-cyan-gray-200 focus:border-cyan-500"
+                    className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                     placeholder=" "
-                    id="password"
                     {...register("password", {
                       required: "password is required",
                       minLength: {
@@ -122,43 +107,32 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
                     })}
                     autoComplete="current-password"
                   />
-                  <label className="flex w-full h-full select-none pointer-events-none absolute left-0 font-normal !overflow-visible truncate peer-placeholder-shown:text-cyan-gray-500 leading-tight peer-focus:leading-tight peer-disabled:text-transparent peer-disabled:peer-placeholder-shown:text-cyan-gray-500 transition-all -top-1.5 peer-placeholder-shown:text-sm text-[11px] peer-focus:text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 peer-placeholder-shown:before:border-transparent before:rounded-tl-md before:border-t peer-focus:before:border-t-2 before:border-l peer-focus:before:border-l-2 before:pointer-events-none before:transition-all peer-disabled:before:border-transparent after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 peer-placeholder-shown:after:border-transparent after:rounded-tr-md after:border-t peer-focus:after:border-t-2 after:border-r peer-focus:after:border-r-2 after:pointer-events-none after:transition-all peer-disabled:after:border-transparent peer-placeholder-shown:leading-[3.75] text-cyan-gray-400 peer-focus:text-cyan-500 before:border-cyan-gray-200 peer-focus:before:!border-cyan-500 after:border-cyan-gray-200 peer-focus:after:!border-cyan-500">
+                  <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
                     Password
                   </label>
                   {!show ? (
-                    <span
-                      className="flex justify-around items-center"
+                    <IoEye
+                      className="absolute right-1 top-2 cursor-pointer"
+                      size={25}
                       onClick={handleToggle}
-                    >
-                      <IoEye
-                        className="absolute right-1 cursor-pointer top-2"
-                        size={25}
-                      />
-                    </span>
+                    />
                   ) : (
-                    <span
-                      className="flex justify-around items-center"
+                    <IoEyeOff
+                      className="absolute right-1 top-2 cursor-pointer"
+                      size={25}
                       onClick={handleToggle}
-                    >
-                      <IoEyeOff
-                        className="absolute right-1 cursor-pointer top-2"
-                        size={25}
-                      />
-                    </span>
+                    />
                   )}
-                  <p className=" text-xs px-3 text-nowrap text-red-500">
+                  <p className="text-red-500 text-xs px-3">
                     {errors?.password?.message ||
-                      errors?.password?.minLength?.message ||
-                      errors?.confirmPassword?.message ||
-                      errors?.confirmPassword?.validate()}
+                      errors?.password?.minLength?.message}
                   </p>
                 </div>
                 <div className="relative mb-3 w-full h-10">
                   <input
                     type={type}
-                    className=" peer w-full h-full bg-transparent text-cyan-gray-700 font-sans font-normal outline outline-0 focus:outline-0 disabled:bg-cyan-gray-50 disabled:border-0 transition-all placeholder-shown:border placeholder-shown:border-cyan-gray-200 placeholder-shown:border-t-cyan-gray-200 border focus:border-2 focus:border-t-transparent text-sm px-3 py-2.5 rounded-[7px] border-cyan-gray-200 focus:border-cyan-500"
+                    className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                     placeholder=" "
-                    id="confirmPassword"
                     {...register("confirmPassword", {
                       required: "confirm password is required",
                       validate: (value, formValues) =>
@@ -167,27 +141,31 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
                     })}
                     autoComplete="current-password"
                   />
-                  <label className="flex w-full h-full select-none pointer-events-none absolute left-0 font-normal !overflow-visible truncate peer-placeholder-shown:text-cyan-gray-500 leading-tight peer-focus:leading-tight peer-disabled:text-transparent peer-disabled:peer-placeholder-shown:text-cyan-gray-500 transition-all -top-1.5 peer-placeholder-shown:text-sm text-[11px] peer-focus:text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 peer-placeholder-shown:before:border-transparent before:rounded-tl-md before:border-t peer-focus:before:border-t-2 before:border-l peer-focus:before:border-l-2 before:pointer-events-none before:transition-all peer-disabled:before:border-transparent after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 peer-placeholder-shown:after:border-transparent after:rounded-tr-md after:border-t peer-focus:after:border-t-2 after:border-r peer-focus:after:border-r-2 after:pointer-events-none after:transition-all peer-disabled:after:border-transparent peer-placeholder-shown:leading-[3.75] text-cyan-gray-400 peer-focus:text-cyan-500 before:border-cyan-gray-200 peer-focus:before:!border-cyan-500 after:border-cyan-gray-200 peer-focus:after:!border-cyan-500">
+                  <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
                     Confirm Password
                   </label>
                   {!show ? (
-                    <span
-                      className="flex justify-around items-center"
+                    <IoEye
+                      className="absolute right-1 top-2 cursor-pointer"
+                      size={25}
                       onClick={handleToggle}
-                    ></span>
+                    />
                   ) : (
-                    <span
-                      className="flex justify-around items-center"
+                    <IoEyeOff
+                      className="absolute right-1 top-2 cursor-pointer"
+                      size={25}
                       onClick={handleToggle}
-                    ></span>
+                    />
                   )}
+                  <p className="text-red-500 text-xs px-3">
+                    {errors?.confirmPassword?.message}
+                  </p>
                 </div>
               </div>
               <div className="relative mb-3 w-full h-10">
                 <input
-                  className="peer w-full h-full bg-transparent text-cyan-gray-700 font-sans font-normal focus:outline-0 disabled:bg-cyan-gray-50 disabled:border-0 transition-all placeholder-shown:border placeholder-shown:border-cyan-gray-200 placeholder-shown:border-t-cyan-gray-200 border focus:border-2 focus:border-t-transparent text-sm px-3 py-2.5 rounded-[7px] border-cyan-gray-200 focus:border-cyan-500"
+                  className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                   placeholder=" "
-                  id="email"
                   {...register("email", {
                     required: "Email is required",
                     pattern: {
@@ -198,7 +176,7 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
                   type="email"
                   autoComplete="email"
                 />
-                <label className="flex w-full h-full select-none pointer-events-none absolute left-0 font-normal !overflow-visible truncate peer-placeholder-shown:text-cyan-gray-500 leading-tight peer-focus:leading-tight peer-disabled:text-transparent peer-disabled:peer-placeholder-shown:text-cyan-gray-500 transition-all -top-1.5 peer-placeholder-shown:text-sm text-[11px] peer-focus:text-[11px] before:content[' '] before:block before:box-border before:w-2.5 before:h-1.5 before:mt-[6.5px] before:mr-1 peer-placeholder-shown:before:border-transparent before:rounded-tl-md before:border-t peer-focus:before:border-t-2 before:border-l peer-focus:before:border-l-2 before:pointer-events-none before:transition-all peer-disabled:before:border-transparent after:content[' '] after:block after:flex-grow after:box-border after:w-2.5 after:h-1.5 after:mt-[6.5px] after:ml-1 peer-placeholder-shown:after:border-transparent after:rounded-tr-md after:border-t peer-focus:after:border-t-2 after:border-r peer-focus:after:border-r-2 after:pointer-events-none after:transition-all peer-disabled:after:border-transparent peer-placeholder-shown:leading-[3.75] text-cyan-gray-400 peer-focus:text-cyan-500 before:border-cyan-gray-200 peer-focus:before:!border-cyan-500 after:border-cyan-gray-200 peer-focus:after:!border-cyan-500">
+                <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
                   Email Address
                 </label>
                 <p className="text-xs px-3 text-red-500">
@@ -211,7 +189,7 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
 
               <div className="w-full flex justify-center flex-col gap-y-4 items-center ">
                 <button
-                  className="cursor-pointer w-full transition-all bg-blue-500 h-12 text-white px-6 py-2 rounded-lg border-blue-600 border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px]active:border-b-[2px] active:brightness-90 active:translate-y-[2px]"
+                  className="cursor-pointer w-full transition-all bg-blue-500 h-12 text-white px-6 py-2 rounded-lg border-blue-600 border-b-4 hover:brightness-110 hover:-translate-y-px hover:border-b-[6px]active:border-b-2 active:brightness-90 active:translate-y-0.5"
                   disabled={loading}
                 >
                   {loading && (
@@ -238,7 +216,7 @@ const SignupForm = ({ closePopup, openLoginPopup,openOtpPopup }) => {
                   )}
                   Sign Up
                 </button>
-                <button className="cursor-pointer w-full h-12 flex justify-center items-center transition-all text-blue-600 bg-gray-200  px-6 py-2 rounded-lg border-gray-400 border-b-[4px] hover:brightness-100 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-60 active:translate-y-[2px]">
+                <button className="cursor-pointer w-full h-12 flex justify-center items-center transition-all text-blue-600 bg-gray-200  px-6 py-2 rounded-lg border-gray-400 border-b-4 hover:brightness-100 hover:-translate-y-px hover:border-b-[6px] active:border-b-2 active:brightness-60 active:translate-y-0.5">
                   <FcGoogle className="mr-3" size={24} />
                   Sign Up with Google
                 </button>

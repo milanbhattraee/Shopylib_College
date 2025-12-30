@@ -3,14 +3,9 @@ import React, { useState } from "react";
 import { FcGoogle } from "react-icons/fc";
 import { IoMdClose } from "react-icons/io";
 import { IoEye, IoEyeOff } from "react-icons/io5";
-import { useDispatch } from "react-redux";
 import { useForm } from "react-hook-form";
-import { generateNewOtpAsync, loginUserAsync } from "../authSlice";
 
-
-const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
-
-
+const LoginForm = ({ closePopup, openSignupPopup, openOtpPopup }) => {
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -30,15 +25,9 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
     setError(null);
 
     try {
-      const loginUserDetails = await dispatch(loginUserAsync(data));
- 
-      if (loginUserDetails.payload.user && !(loginUserDetails.payload.user.isVerified)) {
-
-        await dispatch(generateNewOtpAsync(loginUserDetails.payload.user.id)); 
-        
-        openOtpPopup(loginUserDetails.payload.user.id);
-        return;
-      }
+      // TODO: Replace with API call
+      console.log("Login form data:", data);
+      openOtpPopup();
       closePopup();
     } catch (error) {
       setError(error.response?.data?.message || "Failed to Login");
@@ -55,10 +44,13 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
     formState: { errors },
   } = useForm();
 
-  const dispatch = useDispatch();
-
   return (
-    <div className="fixed inset-0 flex items-center justify-center bg-black backdrop-blur-md bg-opacity-50 z-50">
+    <div
+      className="fixed inset-0 flex items-center justify-center
+bg-black/30 backdrop-blur-sm
+z-50
+"
+    >
       <div className="bg-white relative rounded-2xl shadow-xl p-8 w-[500px]">
         <IoMdClose
           className="absolute right-8 top-8 text-3xl text-blue-600 cursor-pointer transform transition-transform duration-300 hover:rotate-90"
@@ -67,7 +59,11 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
         <h2 className="text-3xl font-bold text-center mb-8 text-blue-700">
           Login
         </h2>
-        <form noValidate onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+        <form
+          noValidate
+          onSubmit={handleSubmit(onSubmit)}
+          className="space-y-6"
+        >
           {/* Email Input */}
           <div className="relative mb-3 w-full h-10">
             <input
@@ -78,7 +74,9 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
             <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:flex-grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
               Email Address
             </label>
-            <p className="text-red-500 text-xs px-3 ">{errors?.email?.message}</p>
+            <p className="text-red-500 text-xs px-3 ">
+              {errors?.email?.message}
+            </p>
           </div>
 
           {/* Password Input */}
@@ -92,7 +90,9 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
             <label className="before:content[' '] after:content[' '] pointer-events-none absolute left-0 -top-1.5 flex h-full w-full select-none text-[11px] font-normal leading-tight text-cyan-500 transition-all before:pointer-events-none before:mt-[6.5px] before:mr-1 before:box-border before:block before:h-1.5 before:w-2.5 before:rounded-tl-md before:border-t before:border-l before:border-cyan-500 before:transition-all after:pointer-events-none after:mt-[6.5px] after:ml-1 after:box-border after:block after:h-1.5 after:w-2.5 after:flex-grow after:rounded-tr-md after:border-t after:border-r after:border-cyan-500 after:transition-all peer-placeholder-shown:text-sm peer-placeholder-shown:leading-[3.75] peer-placeholder-shown:text-gray-800 peer-placeholder-shown:before:border-transparent peer-placeholder-shown:after:border-transparent peer-focus:text-[11px] peer-focus:leading-tight peer-focus:text-cyan-500 peer-focus:before:border-t-2 peer-focus:before:border-l-2 peer-focus:before:border-cyan-500 peer-focus:after:border-t-2 peer-focus:after:border-r-2 peer-focus:after:border-cyan-500 peer-disabled:text-transparent peer-disabled:before:border-transparent peer-disabled:after:border-transparent peer-disabled:peer-placeholder-shown:text-blue-gray-300">
               Password
             </label>
-            <p className="text-red-500 text-xs px-3 ">{errors?.password?.message}</p>
+            <p className="text-red-500 text-xs px-3 ">
+              {errors?.password?.message}
+            </p>
             {!showPassword ? (
               <IoEye
                 className="absolute right-1 top-2 cursor-pointer"
@@ -112,7 +112,10 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
 
           {/* Forgot Password */}
           <div className="flex items-center justify-between mt-4">
-            <a href="/auth/forgot-password" className="text-sm text-blue-500 hover:underline">
+            <a
+              href="/auth/forgot-password"
+              className="text-sm text-blue-500 hover:underline"
+            >
               Forgot Password?
             </a>
           </div>
@@ -131,8 +134,19 @@ const LoginForm = ({ closePopup, openSignupPopup ,openOtpPopup }) => {
                   xmlns="http://www.w3.org/2000/svg"
                   className="animate-spin h-5 w-5 mr-3 text-white"
                 >
-                  <circle strokeWidth="4" stroke="currentColor" r="10" cy="12" cx="12" className="opacity-25" />
-                  <path d="M4 12a8 8 0 018-8v8H4z" fill="currentColor" className="opacity-75" />
+                  <circle
+                    strokeWidth="4"
+                    stroke="currentColor"
+                    r="10"
+                    cy="12"
+                    cx="12"
+                    className="opacity-25"
+                  />
+                  <path
+                    d="M4 12a8 8 0 018-8v8H4z"
+                    fill="currentColor"
+                    className="opacity-75"
+                  />
                 </svg>
               )}
               Login
