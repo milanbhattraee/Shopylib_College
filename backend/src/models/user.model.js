@@ -96,7 +96,6 @@ const User = (sequelize) => {
         type: DataTypes.STRING(50),
         allowNull: false,
         validate: {
-          notEmpty: { msg: "Last name is required" },
           len: {
             args: [2, 50],
             msg: "Last name must be between 2-50 characters",
