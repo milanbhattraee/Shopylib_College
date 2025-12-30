@@ -1,30 +1,9 @@
-"use client";
 import axios from 'axios';
 import { toast } from 'react-toastify';
+import handleRequest from '../utils/apiHandler';
 
 const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
-// General function to handle API requests
-const handleRequest = async ({ url, method = 'POST', data = null, headers = {} }) => {
-  try {
-    const response = await axios({
-      url,
-      method,
-      data,
-      headers: {
-        'Content-Type': 'application/json',
-        ...headers,
-      },
-      withCredentials: true,
-    });
-    return response.data;
-  } catch (error) {
-    const errorMessage = error?.response?.data?.message || 'An error occurred';
-    toast.error(errorMessage);
-    console.error(`Error in ${method} request:`, error);
-    throw error;
-  }
-};
 
 // Register user
 export const registerUser = async(userData) => {
@@ -39,8 +18,6 @@ export const loginUser = async (userData) => {
   const response = await handleRequest({ url, method: 'POST', data: userData });
   return response;
 };
-
-
 
 // Logout user
 export const logoutUser = async () => {
@@ -92,6 +69,7 @@ export const generateNewOtp = async (userId) => {
   }
   return response;
 };
+
 export const verifyOtp = async (otp,userId) => {
   const url = `${apiUrl}/users/verify-otp`;
   
