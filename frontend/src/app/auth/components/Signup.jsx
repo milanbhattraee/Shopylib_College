@@ -5,12 +5,13 @@ import { FcGoogle } from "react-icons/fc";
 import { IoMdClose } from "react-icons/io";
 import { IoEye, IoEyeOff } from "react-icons/io5";
 import Link from "next/link";
+import { useSignupUser } from "../hooks/useAuth";
 
 const SignupForm = ({ closePopup, openLoginPopup, openOtpPopup }) => {
   const [show, setShow] = useState(false);
   const [type, setType] = useState("password");
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
+
+  const signupMutation =  useSignupUser();
 
   const handleToggle = () => {
     setShow(!show);
@@ -22,19 +23,17 @@ const SignupForm = ({ closePopup, openLoginPopup, openOtpPopup }) => {
   };
 
   const onSubmit = async (data) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // TODO: Replace with API call
-      console.log("Form data:", data);
-      openOtpPopup();
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to register");
-      console.error("Error creating user:", error);
-    } finally {
-      setLoading(false);
-    }
+    await signupMutation.mutateAsync(data, {
+      onSuccess: (response) => {
+        if (response?.success) {
+          openOtpPopup(response?.data);
+          closePopup();
+        }
+      },
+      onError: (error) => {
+        console.error("Signup failed:", error);
+      }
+    });
   };
 
   const {

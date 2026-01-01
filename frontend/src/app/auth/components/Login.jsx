@@ -4,12 +4,13 @@ import { FcGoogle } from "react-icons/fc";
 import { IoMdClose } from "react-icons/io";
 import { IoEye, IoEyeOff } from "react-icons/io5";
 import { useForm } from "react-hook-form";
+import { useLoginUser } from "../hooks/useAuth";
 
 const LoginForm = ({ closePopup, openSignupPopup, openOtpPopup }) => {
-  const [error, setError] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [passwordType, setPasswordType] = useState("password");
+
+  const loginMutation = useLoginUser();
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
@@ -21,20 +22,16 @@ const LoginForm = ({ closePopup, openSignupPopup, openOtpPopup }) => {
   };
 
   const onSubmit = async (data) => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      // TODO: Replace with API call
-      console.log("Login form data:", data);
-      openOtpPopup();
-      closePopup();
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to Login");
-      console.error("Error updating user:", error);
-    } finally {
-      setLoading(false);
-    }
+    await loginMutation.mutateAsync(data,{
+      onSuccess: (response) => {
+        console.log("Login successful:", response);
+        openOtpPopup();
+        closePopup();
+      },
+      onError: (error) => {
+        console.error("Error logging in:", error);
+      },
+    });
   };
 
   const {
@@ -67,7 +64,7 @@ z-50
           {/* Email Input */}
           <div className="relative mb-3 w-full h-10">
             <input
-              className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700 outline outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
+              className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
               placeholder=" "
               {...register("email", { required: "Email is required" })}
             />

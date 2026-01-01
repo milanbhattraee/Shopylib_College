@@ -1,4 +1,3 @@
-
 const ClientLayout = ({ children }) => {
   return <>{children}</>;
 };

@@ -5,7 +5,6 @@ import { IoMdClose } from "react-icons/io";
 const ResetPassword = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
   const handleSubmit = (e) => {

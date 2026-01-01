@@ -77,3 +77,100 @@ export const verifyOtp = async (otp,userId) => {
   
   return response;
 };
+
+// Change password
+export const changePassword = async (currentPassword, newPassword) => {
+  const url = `${apiUrl}/auth/change-password`;
+  const response = await handleRequest({ 
+    url, 
+    method: 'POST', 
+    data: { currentPassword, newPassword } 
+  });
+  if (response?.success) {
+    toast.success("Password changed successfully!");
+  }
+  return response;
+};
+
+// Get current user
+export const getCurrentUser = async () => {
+  const url = `${apiUrl}/auth/current-user`;
+  const response = await handleRequest({ url, method: 'GET' });
+  return response;
+};
+
+// Send email verification
+export const sendEmailVerification = async () => {
+  const url = `${apiUrl}/auth/send-verification`;
+  const response = await handleRequest({ url, method: 'POST' });
+  if (response?.success) {
+    toast.success("Verification email sent!");
+  }
+  return response;
+};
+
+// Verify email
+export const verifyEmail = async (token) => {
+  const url = `${apiUrl}/auth/verify-email`;
+  const response = await handleRequest({ url, method: 'POST', data: { token } });
+  if (response?.success) {
+    toast.success("Email verified successfully!");
+  }
+  return response;
+};
+
+// Request password reset
+export const requestPasswordReset = async (email) => {
+  const url = `${apiUrl}/auth/request-reset`;
+  const response = await handleRequest({ url, method: 'POST', data: { email } });
+  if (response?.success) {
+    toast.success("Password reset email sent!");
+  }
+  return response;
+};
+
+// Reset password
+export const resetPassword = async (token, newPassword) => {
+  const url = `${apiUrl}/auth/reset-password`;
+  const response = await handleRequest({ 
+    url, 
+    method: 'POST', 
+    data: { token, newPassword } 
+  });
+  if (response?.success) {
+    toast.success("Password reset successfully!");
+  }
+  return response;
+};
+
+// Get active sessions
+export const getActiveSessions = async () => {
+  const url = `${apiUrl}/auth/sessions`;
+  const response = await handleRequest({ url, method: 'GET' });
+  return response;
+};
+
+// Logout from specific device
+export const logoutDevice = async (tokenId, password) => {
+  const url = `${apiUrl}/auth/logout-device`;
+  const response = await handleRequest({ 
+    url, 
+    method: 'POST', 
+    data: { tokenId, password } 
+  });
+  if (response?.success) {
+    toast.success("Device logged out successfully!");
+  }
+  return response;
+};
+
+// Authenticate with Google
+export const authenticateWithGoogle = async (googleProfile) => {
+  const url = `${apiUrl}/auth/google`;
+  const response = await handleRequest({ 
+    url, 
+    method: 'POST', 
+    data: { googleProfile } 
+  });
+  return response;
+};
