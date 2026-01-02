@@ -25,7 +25,6 @@ const Home = async () => {
 
   return (
     <>
-      <Header />
       <ProductGrid products={products} />
     </>
   );

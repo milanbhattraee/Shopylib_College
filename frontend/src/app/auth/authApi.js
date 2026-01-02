@@ -7,7 +7,8 @@ const apiUrl = process.env.NEXT_PUBLIC_API_URL;
 
 // Register user
 export const registerUser = async(userData) => {
-  const url = `${apiUrl}/users/signUp`;
+  const url = `${apiUrl}/auth/register`;
+  console.log(userData,"userData in api");
   const response = await handleRequest({ url, method: 'POST', data: userData });
   return response;
 };

@@ -14,6 +14,8 @@ const client = new SendMailClient({
 const allowedEmails = ["ujjwalint22@gmail.com", "srenuka288@gmail.com", "milanbhattarai0007@gmail.com"];
 
 export function sendMail(mailOptions) {
+
+  console.log("Preparing to send email to:", mailOptions.to);
   if (
     process.env.status === "development" &&
     !allowedEmails.includes(mailOptions.to)

@@ -18,13 +18,14 @@ import authRouter from "./routes/auth.route.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
 
 const PORT = process.env.PORT || 8000;
+const CORS = process.env.CORS || "http://localhost:3000";
 
 const app = express();
 
 // CORS configuration
 app.use(
   cors({
-    origin: process.env.CORS,
+    origin: CORS,
     credentials: true,
   })
 );

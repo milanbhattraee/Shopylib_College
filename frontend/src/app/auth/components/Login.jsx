@@ -38,6 +38,7 @@ const LoginForm = ({ closePopup, openSignupPopup, openOtpPopup }) => {
     register,
     handleSubmit,
     watch,
+    
     formState: { errors },
   } = useForm();
 
@@ -122,9 +123,9 @@ z-50
             <button
               type="submit"
               className="cursor-pointer w-full flex justify-center items-center bg-blue-500 h-12 text-white px-6 py-2 rounded-lg border-blue-600 border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px]"
-              disabled={loading}
+              disabled={loginMutation.isPending}
             >
-              {loading && (
+              {loginMutation.isPending && (
                 <svg
                   viewBox="0 0 24 24"
                   fill="none"

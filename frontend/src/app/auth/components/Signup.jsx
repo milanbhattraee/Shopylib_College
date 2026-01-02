@@ -66,7 +66,7 @@ const SignupForm = ({ closePopup, openLoginPopup, openOtpPopup }) => {
                   <input
                     className="peer h-full w-full rounded-[7px] border border-cyan-500 border-t-transparent bg-transparent px-3 py-2.5 font-sans text-sm font-normal text-blue-gray-700  outline-0 transition-all placeholder-shown:border placeholder-shown:border-gray-300 placeholder-shown:border-t-gray-300 focus:border-2 focus:border-cyan-500 focus:border-t-transparent focus:outline-0 disabled:border-0 disabled:bg-blue-gray-50"
                     placeholder=" "
-                    {...register("firstname", {
+                    {...register("firstName", {
                       required: "First Name is required",
                     })}
                   />
@@ -190,9 +190,9 @@ const SignupForm = ({ closePopup, openLoginPopup, openOtpPopup }) => {
               <div className="w-full flex justify-center flex-col gap-y-4 items-center ">
                 <button
                   className="cursor-pointer w-full transition-all bg-blue-500 h-12 text-white px-6 py-2 rounded-lg border-blue-600 border-b-4 hover:brightness-110 hover:-translate-y-px hover:border-b-[6px]active:border-b-2 active:brightness-90 active:translate-y-0.5"
-                  disabled={loading}
+                  disabled={signupMutation.isPending}
                 >
-                  {loading && (
+                  {signupMutation.isPending && (
                     <svg
                       viewBox="0 0 24 24"
                       fill="none"

@@ -21,7 +21,8 @@ const handleRequest = async ({ url, method = 'POST', data = null, headers = {} }
     }
 
     const response = await axios(config);
-    return response.data;
+
+    console.log(response.data, `Response from ${method} request to ${url}:`);
 
   } catch (error) {
     const errorMessage = error?.response?.data?.message || 'An error occurred';

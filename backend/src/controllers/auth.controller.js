@@ -623,6 +623,8 @@ export const registerWithEmail = async (req, res) => {
       dateOfBirth,
     } = req.body;
 
+    console.log(req.body,"req body in register");
+
     // Create auth record
     const auth = await Auth.create(
       {
