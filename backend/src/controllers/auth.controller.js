@@ -701,7 +701,7 @@ export const registerWithEmail = async (req, res) => {
     </div>
   `,
     };
-
+    console.log(emailOptions,"email options in register");
     sendMail(emailOptions);
 
     res.status(201).json({
