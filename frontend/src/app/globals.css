@@ -1,66 +1,44 @@
 @import "tailwindcss";
 
-/* ===========================
-   Color Variables
-=========================== */
 :root {
   --primary: #0047AB;
   --primary-dark: #003580;
   --primary-light: #1e5ac7;
-  
   --secondary: #f5f5f5;
   --secondary-dark: #e8e8e8;
   --secondary-light: #ffffff;
-  
   --glass-blur: 8px;
   --glass-opacity: 0.6;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --info: #3b82f6;
 }
 
-/* ===========================
-   Primary Color
-=========================== */
-.bg-primary {
-  background-color: var(--primary);
+body {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  background-color: #f8fafc;
+  color: #1e293b;
 }
 
-.text-primary {
-  color: var(--primary);
-}
+.bg-primary { background-color: var(--primary); }
+.text-primary { color: var(--primary); }
+.border-primary { border-color: var(--primary); }
+.bg-primary-dark { background-color: var(--primary-dark); }
+.text-primary-dark { color: var(--primary-dark); }
+.bg-primary-light { background-color: var(--primary-light); }
+.bg-secondary { background-color: var(--secondary); }
+.text-secondary { color: var(--secondary); }
+.border-secondary { border-color: var(--secondary); }
 
-.border-primary {
-  border-color: var(--primary);
-}
-
-/* ===========================
-   Secondary Color
-=========================== */
-.bg-secondary {
-  background-color: var(--secondary);
-}
-
-.text-secondary {
-  color: var(--secondary);
-}
-
-.border-secondary {
-  border-color: var(--secondary);
-}
-
-/* ===========================
-   Glassy Effects Layer
-=========================== */
 @layer utilities {
-  /* Main Glassy Class */
   .glass {
     background-color: rgba(255, 255, 255, var(--glass-opacity));
     -webkit-backdrop-filter: blur(var(--glass-blur));
     backdrop-filter: blur(var(--glass-blur));
     border: 1px solid rgb(255, 255, 255);
-    /* box-shadow: 0 6px 20px rgba(16, 24, 40, 0.08); */
     border-radius: 0.75rem;
   }
-
-  /* Glassy White Variant */
   .bg-glassywhite {
     background-color: rgba(255, 255, 255, var(--glass-opacity));
     -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -68,10 +46,7 @@
     border: 1px solid rgba(255, 255, 255, 0.5);
     box-shadow: 0 6px 20px rgba(16, 24, 40, 0.08);
     border-radius: 0.75rem;
-    color: inherit;
   }
-
-  /* Strong Glass Effect */
   .glass-strong {
     background-color: rgba(255, 255, 255, 0.75);
     -webkit-backdrop-filter: blur(12px);
@@ -79,16 +54,6 @@
     border: 1px solid rgba(255, 255, 255, 0.6);
     border-radius: 0.75rem;
   }
-
-  .bg-glassywhite-strong {
-    background-color: rgba(255, 255, 255, 0.75);
-    -webkit-backdrop-filter: blur(12px);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.6);
-    border-radius: 0.75rem;
-  }
-
-  /* Light Glass Effect */
   .glass-light {
     background-color: rgba(255, 255, 255, 0.45);
     -webkit-backdrop-filter: blur(6px);
@@ -96,26 +61,14 @@
     border: 1px solid rgba(255, 255, 255, 0.35);
     border-radius: 0.75rem;
   }
-
-  .bg-glassywhite-light {
-    background-color: rgba(255, 255, 255, 0.45);
-    -webkit-backdrop-filter: blur(6px);
-    backdrop-filter: blur(6px);
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 0.75rem;
-  }
-
-  /* Primary Glass (Blue Tinted) */
   .glass-primary {
-    background: linear-gradient(135deg, rgba(0, 71, 171, 0.15) 0%, rgba(30, 90, 199, 0.1) 100%);
+    background: linear-gradient(135deg, rgba(0, 71, 171, 0.15), rgba(30, 90, 199, 0.1));
     -webkit-backdrop-filter: blur(var(--glass-blur));
     backdrop-filter: blur(var(--glass-blur));
     border: 1px solid rgba(0, 71, 171, 0.3);
     border-radius: 0.75rem;
     box-shadow: 0 6px 20px rgba(0, 71, 171, 0.1);
   }
-
-  /* Secondary Glass (Gray Tinted) */
   .glass-secondary {
     background-color: rgba(245, 245, 245, var(--glass-opacity));
     -webkit-backdrop-filter: blur(var(--glass-blur));
@@ -124,8 +77,6 @@
     border-radius: 0.75rem;
     box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
   }
-
-  /* Dark Glass */
   .glass-dark {
     background-color: rgba(40, 40, 40, 0.7);
     -webkit-backdrop-filter: blur(10px);
@@ -135,3 +86,13 @@
     color: white;
   }
 }
+
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #f1f5f9; }
+::-webkit-scrollbar-thumb { background: #94a3b8; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+.animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+.animate-slideUp { animation: slideUp 0.4s ease-out; }

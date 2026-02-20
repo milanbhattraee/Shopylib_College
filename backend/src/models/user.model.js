@@ -138,7 +138,8 @@ const User = (sequelize) => {
             "manageCoupons",
             "manageProducts",
             "manageOrders",
-            "manageStore"
+            "manageStore",
+            "manageReviews"
           )
         ),
         allowNull: false,

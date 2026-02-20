@@ -6,6 +6,7 @@ import {
   ProductVariant,
   Coupon,
   OrderCoupon,
+  Auth,
 } from "../models/index.model.js";
 import { sequelize } from "../models/index.model.js";
 import { Cart } from "../models/index.model.js";
@@ -73,7 +74,7 @@ export const createOrder = async (req, res) => {
         ) * cartItem.quantity;
     }
 
-    let coupenResult;
+    let coupenResult = null;
 
     if (couponCodes && couponCodes.length > 0) {
       coupenResult = await applyCouponToOrder(
@@ -83,13 +84,14 @@ export const createOrder = async (req, res) => {
         transaction
       );
     }
-  
+
+    const discountAmount = coupenResult?.totalDiscountAmount || 0;
 
     const order = await Order.create(
       {
         userId,
         subtotal,
-        discountAmount: coupenResult?.totalDiscountAmount,
+        discountAmount,
         address,
         paymentMethod,
         phone,
@@ -101,18 +103,19 @@ export const createOrder = async (req, res) => {
       { transaction }
     );
 
-
-    await Promise.all(
-      coupenResult.appliedCoupons.map((item) =>
-        OrderCoupon.create(
-          {
-            orderId: order.id,
-            couponId: item.couponId,
-          },
-          { transaction }
+    if (coupenResult?.appliedCoupons?.length > 0) {
+      await Promise.all(
+        coupenResult.appliedCoupons.map((item) =>
+          OrderCoupon.create(
+            {
+              orderId: order.id,
+              couponId: item.couponId,
+            },
+            { transaction }
+          )
         )
-      )
-    );
+      );
+    }
 
     await Promise.all(
       products.map((item) =>
@@ -219,17 +222,18 @@ export const getSingleOrder = async (req, res) => {
             as: "items",
             include: [
               { model: Product, as: "product" },
-              { model: ProductVariant, as: "productVarient" }, // Fixed: matches the alias in OrderItem model
+              { model: ProductVariant, as: "productVarient" },
             ],
           },
           {
             model: Coupon,
-            as: "coupon",
+            as: "coupons",
             attributes: ["code", "name", "type", "value"],
           },
         ],
       });
     } else {
+      const { User } = await import("../models/index.model.js");
       order = await Order.findOne({
         where: { id: orderId },
         include: [
@@ -244,6 +248,18 @@ export const getSingleOrder = async (req, res) => {
           {
             model: Coupon,
             as: "coupons",
+          },
+          {
+            model: User,
+            as: "user",
+            attributes: ["id", "firstName", "lastName", "phone"],
+            include: [
+              {
+                model: Auth,
+                as: "auth",
+                attributes: ["email"],
+              },
+            ],
           },
         ],
       });
@@ -275,21 +291,22 @@ export const getSingleOrder = async (req, res) => {
 
 export const getUserOrders = async (req, res) => {
   try {
-    let userId;
-    if (
-      req.user.role !== "admin" ||
-      !req.user.permissions.includes("manageOrders")
-    ) {
-      userId = req.user.id;
-    } else {
-      userId = req.query.userId;
-    }
+    const isAdmin =
+      req.user.role === "admin" &&
+      req.user.permissions.includes("manageOrders");
 
-    const { page = 1, limit = 10, status } = req.query;
+    const { page = 1, limit = 10, status, userId: queryUserId } = req.query;
     const offset = (page - 1) * limit;
 
-    const whereClause = { userId };
+    const whereClause = {};
+    if (!isAdmin) {
+      whereClause.userId = req.user.id;
+    } else if (queryUserId) {
+      whereClause.userId = queryUserId;
+    }
     if (status) whereClause.status = status;
+
+    const { User } = await import("../models/index.model.js");
 
     const orders = await Order.findAndCountAll({
       where: whereClause,
@@ -310,7 +327,20 @@ export const getUserOrders = async (req, res) => {
             },
           ],
         },
+        {
+          model: User,
+          as: "user",
+          attributes: ["id", "firstName", "lastName", "phone"],
+          include: [
+            {
+              model: Auth,
+              as: "auth",
+              attributes: ["email"],
+            },
+          ],
+        },
       ],
+      distinct: true,
       limit: parseInt(limit),
       offset: parseInt(offset),
       order: [["createdAt", "DESC"]],

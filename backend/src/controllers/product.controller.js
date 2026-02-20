@@ -18,7 +18,12 @@ export const getProductById = async (req, res) => {
       req.user?.role === "admin" &&
       req.user.permissions.includes("manageProducts");
 
-    const product = await Product.findByPk(productId, {
+    // Support both UUID and slug lookup
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(productId);
+    const whereClause = isUUID ? { id: productId } : { slug: productId };
+
+    const product = await Product.findOne({
+      where: whereClause,
       attributes: isAdmin
         ? undefined // all attributes
         : [
