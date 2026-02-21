@@ -433,12 +433,14 @@ export const updateProduct = async (req, res) => {
     }
 
     // 3. Add new images (fieldname = "images")
-    if (req.files && req.files.images) {
-      const newImages = req.files.images;
+    const newImageFiles = req.files
+      ? req.files.filter((f) => f.fieldname === "images")
+      : [];
 
-      for (let i = 0; i < newImages.length; i++) {
+    if (newImageFiles.length > 0) {
+      for (let i = 0; i < newImageFiles.length; i++) {
         try {
-          const photo = await photoWork(newImages[i]);
+          const photo = await photoWork(newImageFiles[i]);
           uploadedImageIds.push(photo.public_id);
 
           updatedImages.push({
@@ -753,12 +755,12 @@ export const createProduct = async (req, res) => {
           productId: product.id,
           sku: variantSku,
           name,
-          price,
-          comparePrice,
-          stockQuantity,
-          attributes,
+          price: price !== "" && price != null ? parseFloat(price) : null,
+          comparePrice: comparePrice !== "" && comparePrice != null ? parseFloat(comparePrice) : null,
+          stockQuantity: stockQuantity !== "" && stockQuantity != null ? parseInt(stockQuantity) : 0,
+          attributes: attributes && typeof attributes === "string" ? JSON.parse(attributes) : attributes || null,
           description,
-          isActive,
+          isActive: isActive === "true" || isActive === true,
           images: variantImage,
         });
       }
@@ -874,15 +876,15 @@ export const updateProductVariant = async (req, res) => {
       {
         sku,
         name,
-        price,
-        comparePrice,
-        stockQuantity,
+        price: price !== "" && price != null ? parseFloat(price) : variant.price,
+        comparePrice: comparePrice !== "" && comparePrice != null ? parseFloat(comparePrice) : null,
+        stockQuantity: stockQuantity !== "" && stockQuantity != null ? parseInt(stockQuantity) : variant.stockQuantity,
         attributes:
           attributes && typeof attributes === "string"
             ? JSON.parse(attributes)
             : attributes,
         description,
-        isActive,
+        isActive: isActive === "true" || isActive === true,
         images: updatedImage,
       },
       { transaction }

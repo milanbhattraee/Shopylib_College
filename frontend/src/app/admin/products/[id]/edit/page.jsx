@@ -53,7 +53,7 @@ export default function EditProductPage() {
 
     // Keep existing images
     if (product?.images) {
-      formData.append("imagesToKeep", JSON.stringify(product.images.map((img) => img.publicId)));
+      formData.append("imagesToKeep", JSON.stringify(product.images.map((img) => img.public_id)));
     }
 
     newImages.forEach((file) => formData.append("images", file));

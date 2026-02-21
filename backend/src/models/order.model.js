@@ -146,6 +146,18 @@ const Order = (sequelize) => {
 
       notes: DataTypes.TEXT,
 
+      // Return fields
+      returnStatus: {
+        type: DataTypes.ENUM("none", "requested", "approved", "rejected"),
+        defaultValue: "none",
+        allowNull: false,
+      },
+      returnReason: DataTypes.TEXT,
+      returnRequestedAt: DataTypes.DATE,
+      returnApprovedAt: DataTypes.DATE,
+      returnRejectedAt: DataTypes.DATE,
+      returnRejectionReason: DataTypes.TEXT,
+
       createdAt: {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,

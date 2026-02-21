@@ -64,8 +64,30 @@ app.use("/api/v1/stats", statsRouter);
 // Database connection and server startup
 sequelize
   .sync({ force: false })
-  .then(() => {
+  .then(async () => {
     console.log("✅ Database tables synced successfully.");
+
+    // Add return columns to orders table if they don't exist
+    try {
+      await sequelize.query(`
+        DO $$
+        BEGIN
+          IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'enum_orders_returnStatus') THEN
+            CREATE TYPE "enum_orders_returnStatus" AS ENUM('none', 'requested', 'approved', 'rejected');
+          END IF;
+        END$$;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnStatus" "enum_orders_returnStatus" NOT NULL DEFAULT 'none';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnReason" TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnRequestedAt" TIMESTAMPTZ;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnApprovedAt" TIMESTAMPTZ;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnRejectedAt" TIMESTAMPTZ;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS "returnRejectionReason" TEXT;
+      `);
+      console.log("✅ Return columns migration complete.");
+    } catch (migrationErr) {
+      console.log("ℹ️  Return columns migration skipped (may already exist):", migrationErr.message);
+    }
+
     return sequelize.authenticate();
   })
   .then(() => {

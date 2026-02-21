@@ -1,110 +1,91 @@
-import dotenv from "dotenv";
 import sharp from "sharp";
-import fs from "fs";
-import path from "path";
 import { encode } from "blurhash";
 import cloudinary from "./cloudinary.js";
 
-
-import { fileURLToPath } from 'url';
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-
-// Configure dotenv
-dotenv.config({ path: "./config.env" });
-
-async function generateBlurHash(imagePath) {
+/**
+ * Generate blurhash from an in-memory buffer (32×32 thumbnail).
+ */
+async function generateBlurHash(buffer) {
   return new Promise((resolve, reject) => {
-    sharp(imagePath)
+    sharp(buffer)
       .raw()
       .ensureAlpha()
       .resize(32, 32, { fit: "inside" })
-      .toBuffer((err, buffer, { width, height }) => {
+      .toBuffer((err, data, { width, height }) => {
         if (err) return reject(err);
-        resolve(encode(new Uint8ClampedArray(buffer), width, height, 4, 4));
+        resolve(encode(new Uint8ClampedArray(data), width, height, 4, 4));
       });
   });
 }
 
-async function imageCompressor(inputImagePath) {
-  try {
-    const inputImage = sharp(inputImagePath);
-    const metadata = await inputImage.metadata();
-    const width = metadata.width;
-    const height = metadata.height;
-    const aspectRatio = width / height;
-    const targetFileSize = 1200 * 1024;
-    const newWidth = Math.sqrt(targetFileSize * aspectRatio);
-    const newHeight = newWidth / aspectRatio;
-    const compressedImageBuffer = await inputImage
-      .resize(Math.round(newWidth), Math.round(newHeight))
-      // Remove the .jpeg() method to preserve the original format
-      .toBuffer();
-    const compressedImagePath = path.join(
-      __dirname,
-      "../..",
-      "uploads",
-      "compressed_image." + metadata.format
-    );
-
-    fs.writeFileSync(compressedImagePath, compressedImageBuffer);
-    return {
-      compressedImagePath,
-      width: newWidth,
-      height: newHeight,
-    };
-  } catch (error) {
-    console.error("Error compressing image:", error);
-    throw new Error("Image compression failed");
-  }
+/**
+ * Resize to max 1200px on either dimension and convert to WebP @ 78% quality.
+ * Everything stays in RAM — no temp files.
+ */
+async function compressToWebP(inputBuffer) {
+  return sharp(inputBuffer)
+    .rotate()                                              // auto-correct EXIF orientation
+    .resize(1200, 1200, { fit: "inside", withoutEnlargement: true })
+    .webp({ quality: 78, effort: 4 })                     // effort 4 = fast + good compression
+    .toBuffer({ resolveWithObject: true });                // { data, info }
 }
 
+/**
+ * Upload a Buffer to Cloudinary via upload_stream (no disk file).
+ */
+function uploadToCloudinary(buffer) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { resource_type: "image", format: "webp", quality: "auto:good" },
+      (error, result) => {
+        if (error) return reject(error);
+        resolve(result);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+/**
+ * Delete an image from Cloudinary by public_id.
+ */
 export async function deleteImage(key) {
   try {
-    await cloudinary.uploader.destroy(key, (error, result) => {
-      if (error) {
-        return res.status(500).send({
-          success: false,
-          status: "Image deletion failed",
-          message: `${error.message}`,
-        });
-      }
-    });
+    await cloudinary.uploader.destroy(key);
+    return true;
   } catch (err) {
-    console.error("Error deleting file:", err);
+    console.error("Error deleting cloudinary image:", err);
+    return false;
   }
 }
 
-// main photoWork function
+/**
+ * Main pipeline:
+ *   multer buffer → Sharp (resize + WebP) → Cloudinary stream → blurhash
+ *   Zero disk I/O.
+ */
 export async function photoWork(photo) {
   try {
-    const photoFile = photo;
-    const compressedImage = await imageCompressor(photoFile.path);
+    const inputBuffer = photo.buffer; // multer memoryStorage provides this
 
-    const result = await cloudinary.uploader.upload(
-      compressedImage.compressedImagePath,
-      {
-        quality: "auto:best",
-        fetch_format: "auto",
-      }
-    );
+    // 1. Compress in memory
+    const { data: webpBuffer, info } = await compressToWebP(inputBuffer);
 
-    const blurhash = await generateBlurHash(photoFile.path);
-    const photoObject = {
-      blurhash: blurhash,
+    // 2. Upload to Cloudinary via stream (parallel with blurhash)
+    const [result, blurhash] = await Promise.all([
+      uploadToCloudinary(webpBuffer),
+      generateBlurHash(webpBuffer),
+    ]);
+
+    return {
+      blurhash,
       secure_url: result.secure_url,
       public_id: result.public_id,
-      height: compressedImage.height,
-      width: compressedImage.width,
+      width: result.width,
+      height: result.height,
     };
-    fs.unlink(photoFile.path, () => {});
-    fs.unlink(compressedImage.compressedImagePath, () => {});
-
-    return photoObject;
   } catch (error) {
-    console.log(error);
+    console.error("photoWork error:", error.message);
     throw new Error(error.message);
   }
 }

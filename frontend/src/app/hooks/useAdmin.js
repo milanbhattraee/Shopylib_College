@@ -160,6 +160,32 @@ export const useAdminCancelOrder = () => {
   });
 };
 
+export const useApproveReturn = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => adminApi.approveReturn(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      qc.invalidateQueries({ queryKey: ["admin-order"] });
+      toast.success("Return approved");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to approve return"),
+  });
+};
+
+export const useRejectReturn = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }) => adminApi.rejectReturn(id, data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-orders"] });
+      qc.invalidateQueries({ queryKey: ["admin-order"] });
+      toast.success("Return rejected");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to reject return"),
+  });
+};
+
 // ─── Coupons ───
 export const useAdminCoupons = (params) =>
   useQuery({

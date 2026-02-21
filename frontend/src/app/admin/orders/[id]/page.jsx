@@ -2,7 +2,7 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useAdminOrder, useUpdateOrderStatus, useAdminCancelOrder } from "@/app/hooks/useAdmin";
+import { useAdminOrder, useUpdateOrderStatus, useAdminCancelOrder, useApproveReturn, useRejectReturn } from "@/app/hooks/useAdmin";
 import AdminModal from "@/app/admin/components/AdminModal";
 import AdminButton from "@/app/admin/components/AdminButton";
 import AdminTextarea from "@/app/admin/components/AdminTextarea";
@@ -154,11 +154,15 @@ export default function OrderDetailPage() {
   const { data, isLoading } = useAdminOrder(id);
   const updateStatus = useUpdateOrderStatus();
   const cancelOrder = useAdminCancelOrder();
+  const approveReturn = useApproveReturn();
+  const rejectReturn = useRejectReturn();
 
   const [statusModal, setStatusModal] = useState(false);
   const [cancelModal, setCancelModal] = useState(false);
+  const [rejectModal, setRejectModal] = useState(false);
   const [newStatus, setNewStatus] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
 
   const order = data?.data?.order || data?.data;
 
@@ -169,6 +173,14 @@ export default function OrderDetailPage() {
 
   const handleCancel = () => {
     cancelOrder.mutate({ id, data: { reason: cancelReason } }, { onSuccess: () => { setCancelModal(false); setCancelReason(""); } });
+  };
+
+  const handleApproveReturn = () => {
+    approveReturn.mutate(id);
+  };
+
+  const handleRejectReturn = () => {
+    rejectReturn.mutate({ id, data: { reason: rejectReason } }, { onSuccess: () => { setRejectModal(false); setRejectReason(""); } });
   };
 
   const isFinal = order && ["cancelled", "delivered", "refunded"].includes(order.status);
@@ -423,8 +435,61 @@ export default function OrderDetailPage() {
               {order.shippedAt && <Row label="Shipped">{new Date(order.shippedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
               {order.deliveredAt && <Row label="Delivered">{new Date(order.deliveredAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
               {order.cancelledAt && <Row label="Cancelled">{new Date(order.cancelledAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
+              {order.returnRequestedAt && <Row label="Return Req.">{new Date(order.returnRequestedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
+              {order.returnApprovedAt && <Row label="Return Aprv.">{new Date(order.returnApprovedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
+              {order.returnRejectedAt && <Row label="Return Rej.">{new Date(order.returnRejectedAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}</Row>}
             </div>
           </InfoCard>
+
+          {/* Return Request Card */}
+          {order.returnStatus && order.returnStatus !== "none" && (
+            <InfoCard title="Return Request">
+              <div className="space-y-3">
+                <span className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-semibold border ${
+                  order.returnStatus === "requested" ? "bg-orange-50 text-orange-600 border-orange-200" :
+                  order.returnStatus === "approved" ? "bg-emerald-50 text-emerald-600 border-emerald-200" :
+                  "bg-red-50 text-red-600 border-red-200"
+                }`}>
+                  <span className={`w-2 h-2 rounded-full ${
+                    order.returnStatus === "requested" ? "bg-orange-400" :
+                    order.returnStatus === "approved" ? "bg-emerald-400" :
+                    "bg-red-400"
+                  }`} />
+                  {order.returnStatus.charAt(0).toUpperCase() + order.returnStatus.slice(1)}
+                </span>
+
+                <div className="p-3 bg-gray-50 rounded-xl space-y-1.5">
+                  <p className="text-xs text-gray-400 font-medium uppercase tracking-wider">Return Reason</p>
+                  <p className="text-sm text-gray-700 leading-relaxed">{order.returnReason}</p>
+                </div>
+
+                {order.returnStatus === "rejected" && order.returnRejectionReason && (
+                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl space-y-1.5">
+                    <p className="text-xs text-red-400 font-medium uppercase tracking-wider">Rejection Reason</p>
+                    <p className="text-sm text-red-700">{order.returnRejectionReason}</p>
+                  </div>
+                )}
+
+                {order.returnStatus === "requested" && (
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={handleApproveReturn}
+                      disabled={approveReturn.isPending}
+                      className="flex-1 py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-semibold rounded-xl transition-colors disabled:opacity-50"
+                    >
+                      {approveReturn.isPending ? "Approving..." : "✓ Approve Return"}
+                    </button>
+                    <button
+                      onClick={() => setRejectModal(true)}
+                      className="flex-1 py-2.5 px-4 bg-white border border-red-200 text-red-600 text-sm font-semibold rounded-xl hover:bg-red-50 transition-colors"
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
+                )}
+              </div>
+            </InfoCard>
+          )}
 
           {/* Danger Zone */}
           {!isFinal && (
@@ -508,6 +573,37 @@ export default function OrderDetailPage() {
               Confirm Cancellation
             </AdminButton>
             <AdminButton variant="secondary" onClick={() => setCancelModal(false)}>Go Back</AdminButton>
+          </div>
+        </div>
+      </AdminModal>
+
+      {/* Reject Return Modal */}
+      <AdminModal isOpen={rejectModal} onClose={() => setRejectModal(false)} title="Reject Return Request" maxWidth="max-w-md">
+        <div className="space-y-5">
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 space-y-1">
+            <p className="text-sm font-semibold text-red-700">Reject return for this order</p>
+            <p className="text-xs text-red-500">
+              Order #{order.id?.slice(0, 8).toUpperCase()}
+            </p>
+          </div>
+          {order.returnReason && (
+            <div className="bg-gray-50 rounded-xl p-3">
+              <p className="text-xs text-gray-400 font-medium mb-1">Customer's Return Reason</p>
+              <p className="text-sm text-gray-700">{order.returnReason}</p>
+            </div>
+          )}
+          <AdminTextarea
+            label="Rejection Reason (optional)"
+            rows={3}
+            placeholder="Enter reason for rejecting the return..."
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+          />
+          <div className="flex gap-3">
+            <AdminButton variant="danger" onClick={handleRejectReturn} loading={rejectReturn.isPending}>
+              Reject Return
+            </AdminButton>
+            <AdminButton variant="secondary" onClick={() => setRejectModal(false)}>Go Back</AdminButton>
           </div>
         </div>
       </AdminModal>

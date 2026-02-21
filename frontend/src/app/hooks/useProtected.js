@@ -161,9 +161,23 @@ export const useCancelOrder = () => {
     mutationFn: ({ orderId, reason }) => orderApi.cancel(orderId, { reason }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order"] });
       toast.success("Order cancelled");
     },
     onError: (err) => toast.error(err.response?.data?.message || "Failed to cancel order"),
+  });
+};
+
+export const useRequestReturn = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ orderId, reason }) => orderApi.requestReturn(orderId, { reason }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["orders"] });
+      qc.invalidateQueries({ queryKey: ["order"] });
+      toast.success("Return request submitted");
+    },
+    onError: (err) => toast.error(err.response?.data?.message || "Failed to request return"),
   });
 };
 

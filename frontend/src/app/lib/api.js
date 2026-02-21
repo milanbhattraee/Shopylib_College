@@ -57,6 +57,7 @@ export const orderApi = {
   getAll: (params) => api.get("/orders", { params }).then((r) => r.data),
   getById: (id) => api.get(`/orders/${id}`).then((r) => r.data),
   cancel: (id, data) => api.patch(`/orders/${id}/cancel`, data).then((r) => r.data),
+  requestReturn: (id, data) => api.patch(`/orders/${id}/return`, data).then((r) => r.data),
 };
 
 // ─── Review API ───
@@ -128,6 +129,8 @@ export const adminApi = {
   getOrder: (id) => api.get(`/orders/${id}`).then((r) => r.data),
   updateOrderStatus: (id, data) => api.patch(`/orders/${id}/status`, data).then((r) => r.data),
   cancelOrder: (id, data) => api.patch(`/orders/${id}/cancel`, data).then((r) => r.data),
+  approveReturn: (id) => api.patch(`/orders/${id}/return/approve`).then((r) => r.data),
+  rejectReturn: (id, data) => api.patch(`/orders/${id}/return/reject`, data).then((r) => r.data),
 
   // Coupons
   getCoupons: (params) => api.get("/coupons", { params }).then((r) => r.data),

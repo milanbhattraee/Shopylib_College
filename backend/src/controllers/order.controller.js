@@ -494,3 +494,152 @@ export const changeOrderStatus = async (req, res) => {
     });
   }
 };
+
+// ─── Return Endpoints ───
+
+export const requestReturn = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    if (!reason || reason.trim().length < 5) {
+      return res.status(400).json({
+        success: false,
+        message: "Please provide a return reason (at least 5 characters)",
+        status: "error",
+      });
+    }
+
+    const order = await Order.findOne({
+      where: { id: orderId, userId, status: "delivered" },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "Order not found or is not eligible for return",
+        status: "error",
+      });
+    }
+
+    if (order.returnStatus !== "none") {
+      return res.status(400).json({
+        success: false,
+        message: `Return already ${order.returnStatus}`,
+        status: "error",
+      });
+    }
+
+    // Check return window
+    const returnWindowDays = parseInt(process.env.RETURN_WINDOW_DAYS) || 15;
+    const deliveredAt = new Date(order.deliveredAt);
+    const now = new Date();
+    const diffDays = Math.floor((now - deliveredAt) / (1000 * 60 * 60 * 24));
+
+    if (diffDays > returnWindowDays) {
+      return res.status(400).json({
+        success: false,
+        message: `Return window of ${returnWindowDays} days has expired`,
+        status: "error",
+      });
+    }
+
+    await order.update({
+      returnStatus: "requested",
+      returnReason: reason.trim(),
+      returnRequestedAt: new Date(),
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Return request submitted successfully",
+      status: "Return Requested",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error requesting return:", error);
+    res.status(500).json({
+      success: false,
+      status: "Return Request Failed",
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+export const approveReturn = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+
+    const order = await Order.findOne({
+      where: { id: orderId, returnStatus: "requested" },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending return request found for this order",
+        status: "error",
+      });
+    }
+
+    await order.update({
+      returnStatus: "approved",
+      returnApprovedAt: new Date(),
+      status: "refunded",
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Return approved successfully",
+      status: "Return Approved",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error approving return:", error);
+    res.status(500).json({
+      success: false,
+      status: "Return Approval Failed",
+      message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+export const rejectReturn = async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { reason } = req.body;
+
+    const order = await Order.findOne({
+      where: { id: orderId, returnStatus: "requested" },
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: "No pending return request found for this order",
+        status: "error",
+      });
+    }
+
+    await order.update({
+      returnStatus: "rejected",
+      returnRejectedAt: new Date(),
+      returnRejectionReason: reason || null,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Return rejected",
+      status: "Return Rejected",
+      data: order,
+    });
+  } catch (error) {
+    console.error("Error rejecting return:", error);
+    res.status(500).json({
+      success: false,
+      status: "Return Rejection Failed",
+      message: error.message || "Internal Server Error",
+    });
+  }
+};

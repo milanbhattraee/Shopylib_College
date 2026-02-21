@@ -246,20 +246,12 @@ export const updateCategory = async (req, res) => {
       };
       // delete previous image
       if (category.image && category.image.public_id) {
-        const deletedImage = await deleteImage(category.image.public_id);
-        if (!deletedImage) {
-          console.error(
-            "Failed to delete old image:",
-            category.image.public_id
-          );
-          return res.status(500).send({
-            success: false,
-            status: "Error",
-            message: "Failed to delete old image",
-            data: category.image,
-          });
+        try {
+          await deleteImage(category.image.public_id);
+          console.log("Deleted old image:", category.image.public_id);
+        } catch (delErr) {
+          console.error("Failed to delete old image:", delErr);
         }
-        console.log("Deleted old image:", category.image);
       }
     }
 

@@ -1,9 +1,9 @@
 "use client";
-import React from "react";
+import React, { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { FiArrowLeft, FiPackage } from "react-icons/fi";
-import { useOrder, useCancelOrder } from "@/app/hooks/useProtected";
+import { FiArrowLeft, FiPackage, FiRotateCcw } from "react-icons/fi";
+import { useOrder, useCancelOrder, useRequestReturn } from "@/app/hooks/useProtected";
 import { Loader } from "@/app/components/ui/Loader";
 
 const statusColors = {
@@ -16,12 +16,22 @@ const statusColors = {
   refunded: "bg-gray-100 text-gray-700",
 };
 
+const returnStatusColors = {
+  requested: "bg-orange-100 text-orange-700 border-orange-200",
+  approved: "bg-green-100 text-green-700 border-green-200",
+  rejected: "bg-red-100 text-red-700 border-red-200",
+};
+
 const statusSteps = ["pending", "confirmed", "processing", "shipped", "delivered"];
 
 export default function OrderDetailPage() {
   const { orderId } = useParams();
   const { data, isLoading } = useOrder(orderId);
   const cancelOrder = useCancelOrder();
+  const requestReturn = useRequestReturn();
+
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [returnReason, setReturnReason] = useState("");
 
   const order = data?.data;
 
@@ -38,6 +48,22 @@ export default function OrderDetailPage() {
   const orderTotal = orderSubtotal + orderShipping - orderDiscount;
 
   const canCancel = ["pending", "confirmed"].includes(order.status);
+
+  // Return eligibility
+  const returnWindowDays = 15;
+  const isDelivered = order.status === "delivered";
+  const deliveredAt = order.deliveredAt ? new Date(order.deliveredAt) : null;
+  const daysSinceDelivery = deliveredAt ? Math.floor((new Date() - deliveredAt) / (1000 * 60 * 60 * 24)) : null;
+  const canReturn = isDelivered && daysSinceDelivery !== null && daysSinceDelivery <= returnWindowDays && (!order.returnStatus || order.returnStatus === "none");
+  const daysLeft = returnWindowDays - (daysSinceDelivery || 0);
+
+  const handleReturnSubmit = () => {
+    if (!returnReason.trim() || returnReason.trim().length < 5) return;
+    requestReturn.mutate(
+      { orderId, reason: returnReason.trim() },
+      { onSuccess: () => { setShowReturnModal(false); setReturnReason(""); } }
+    );
+  };
 
   return (
     <div className="space-y-6">
@@ -76,6 +102,15 @@ export default function OrderDetailPage() {
                 className="cursor-pointer text-sm px-4 py-1.5 border-2 border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition disabled:opacity-50 font-medium"
               >
                 {cancelOrder.isPending ? "Cancelling..." : "Cancel Order"}
+              </button>
+            )}
+            {canReturn && (
+              <button
+                onClick={() => setShowReturnModal(true)}
+                className="cursor-pointer text-sm px-4 py-1.5 border-2 border-orange-300 text-orange-600 rounded-lg hover:bg-orange-50 transition font-medium inline-flex items-center gap-1.5"
+              >
+                <FiRotateCcw className="w-3.5 h-3.5" />
+                Return Order
               </button>
             )}
           </div>
@@ -189,6 +224,95 @@ export default function OrderDetailPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <h2 className="text-base font-bold text-blue-700 mb-2">Order Notes</h2>
           <p className="text-sm text-gray-600">{order.notes}</p>
+        </div>
+      )}
+
+      {/* Return Status Banner */}
+      {order.returnStatus && order.returnStatus !== "none" && (
+        <div className={`rounded-2xl shadow-xl p-8 border ${returnStatusColors[order.returnStatus] || "bg-gray-50"}`}>
+          <h2 className="text-base font-bold mb-3 flex items-center gap-2">
+            <FiRotateCcw className="w-5 h-5" />
+            Return {order.returnStatus === "requested" ? "Requested" : order.returnStatus === "approved" ? "Approved" : "Rejected"}
+          </h2>
+          <div className="space-y-2 text-sm">
+            <p><span className="font-medium">Reason:</span> {order.returnReason}</p>
+            {order.returnRequestedAt && (
+              <p><span className="font-medium">Requested:</span> {new Date(order.returnRequestedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+            )}
+            {order.returnStatus === "approved" && order.returnApprovedAt && (
+              <p><span className="font-medium">Approved:</span> {new Date(order.returnApprovedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+            )}
+            {order.returnStatus === "rejected" && (
+              <>
+                {order.returnRejectedAt && (
+                  <p><span className="font-medium">Rejected:</span> {new Date(order.returnRejectedAt).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}</p>
+                )}
+                {order.returnRejectionReason && (
+                  <p><span className="font-medium">Rejection Reason:</span> {order.returnRejectionReason}</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Return eligibility notice */}
+      {isDelivered && (!order.returnStatus || order.returnStatus === "none") && (
+        <div className={`rounded-2xl shadow-xl p-6 border ${canReturn ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200"}`}>
+          <p className={`text-sm ${canReturn ? "text-blue-700" : "text-gray-500"}`}>
+            {canReturn
+              ? `You have ${daysLeft} day${daysLeft !== 1 ? "s" : ""} left to request a return for this order.`
+              : "The return window for this order has expired."
+            }
+          </p>
+        </div>
+      )}
+
+      {/* Return Modal */}
+      {showReturnModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" onClick={() => setShowReturnModal(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 space-y-5" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-lg font-bold text-gray-800">Request Return</h3>
+              <p className="text-sm text-gray-500 mt-1">
+                Order #{order.orderNumber || order.id?.slice(0, 8)} &middot; {daysLeft} day{daysLeft !== 1 ? "s" : ""} remaining
+              </p>
+            </div>
+
+            <div className="bg-orange-50 border border-orange-100 rounded-xl p-3">
+              <p className="text-sm text-orange-700">Please provide a reason for your return. Our team will review your request and get back to you.</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Return Reason *</label>
+              <textarea
+                rows={4}
+                value={returnReason}
+                onChange={(e) => setReturnReason(e.target.value)}
+                placeholder="Tell us why you'd like to return this order..."
+                className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-300 focus:border-orange-300 resize-none"
+              />
+              {returnReason.length > 0 && returnReason.trim().length < 5 && (
+                <p className="text-xs text-red-500 mt-1">Reason must be at least 5 characters</p>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleReturnSubmit}
+                disabled={requestReturn.isPending || returnReason.trim().length < 5}
+                className="flex-1 py-2.5 bg-orange-500 hover:bg-orange-600 text-white text-sm font-semibold rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {requestReturn.isPending ? "Submitting..." : "Submit Return Request"}
+              </button>
+              <button
+                onClick={() => { setShowReturnModal(false); setReturnReason(""); }}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-xl transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
