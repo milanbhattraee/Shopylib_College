@@ -1,16 +1,29 @@
 import { deleteImage, photoWork } from "../config/photoWork.js";
-import { Category } from "../models/index.model.js";
-import { Product, ProductVariant } from "../models/index.model.js";
+import { Category, Product, ProductVariant, sequelize } from "../models/index.model.js";
+import { fn, col, literal } from "sequelize";
 
 export const getCategories = async (req, res) => {
   try {
     const categories = await Category.findAll({
+      where: { isActive: true },
       include: [
-        { model: Category, as: "parent" },
-        { model: Category, as: "children" },
+        { model: Category, as: "parent", attributes: ["id", "name", "slug"] },
+        { model: Category, as: "children", attributes: ["id", "name", "slug"] },
+        {
+          model: Product,
+          as: "products",
+          where: { isActive: true },
+          required: false,
+          attributes: [],
+        },
       ],
-      order: [["name", "ASC"]],
-      
+      attributes: {
+        include: [
+          [fn("COUNT", col("products.id")), "productCount"],
+        ],
+      },
+      group: ["Category.id", "parent.id", "children.id"],
+      order: [["sortOrder", "ASC"], ["name", "ASC"]],
     });
     if (!categories || categories.length === 0) {
       return res.status(404).send({
@@ -38,29 +51,26 @@ export const getCategories = async (req, res) => {
 export const getCategoryBySlug = async (req, res) => {
   try {
     const { slug } = req.params;
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
-    console.log("Fetching category with slug:", slug);
+    const {
+      page = 1,
+      limit = 20,
+      sortBy = "createdAt",
+      sortOrder = "DESC",
+    } = req.query;
+
+    const pageNum = Math.max(1, parseInt(page));
+    const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Validate sortBy to prevent injection
+    const allowedSortFields = ["createdAt", "price", "name", "stockQuantity"];
+    const safeSortBy = allowedSortFields.includes(sortBy) ? sortBy : "createdAt";
+    const safeSortOrder = sortOrder === "ASC" ? "ASC" : "DESC";
+
+    // 1. Fetch the category itself
     const category = await Category.findOne({
       where: { slug, isActive: true },
-      include: [
-        {
-          model: Product,
-          as: "products",
-          where: { isActive: true },
-          required: false,
-          limit: parseInt(limit),
-          offset: parseInt(offset),
-          include: [
-            {
-              model: ProductVariant,
-              as: "variants",
-              where: { isActive: true },
-              required: false,
-            },
-          ],
-        },
-      ],
+      attributes: ["id", "name", "slug", "description", "image", "metaTitle", "metaDescription"],
     });
 
     if (!category) {
@@ -71,11 +81,47 @@ export const getCategoryBySlug = async (req, res) => {
       });
     }
 
+    // 2. Fetch products with proper pagination & sorting
+    const { count, rows: products } = await Product.findAndCountAll({
+      where: { categoryId: category.id, isActive: true },
+      include: [
+        {
+          model: Category,
+          as: "category",
+          attributes: ["id", "name", "slug"],
+        },
+        {
+          model: ProductVariant,
+          as: "variants",
+          where: { isActive: true },
+          required: false,
+          attributes: ["id", "name", "price", "comparePrice", "stockQuantity", "attributes", "images"],
+        },
+      ],
+      order: [[safeSortBy, safeSortOrder]],
+      limit: limitNum,
+      offset,
+      distinct: true,
+    });
+
+    const totalPages = Math.ceil(count / limitNum);
+
     return res.status(200).json({
       success: true,
       status: "Successful",
       message: "Category fetched successfully",
-      data: category,
+      data: {
+        category,
+        products,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalItems: count,
+          itemsPerPage: limitNum,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+        },
+      },
     });
   } catch (error) {
     console.error("Error fetching category:", error);

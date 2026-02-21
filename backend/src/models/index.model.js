@@ -15,6 +15,7 @@ import AuthDef from "./auth.model.js";
 import AuthTokenDef from "./authToken.model.js";
 
 import WishlistDef from "./wishlist.model.js";
+import BannerDef from "./banner.model.js";
 
 const { Sequelize } = SequelizePkg;
 
@@ -35,6 +36,7 @@ const models = {
   Review: ReviewDef(sequelize),
 
   Wishlist: WishlistDef(sequelize),
+  Banner: BannerDef(sequelize),
 };
 
 // Initialize associations
@@ -62,6 +64,7 @@ const {
   Review,
 
   Wishlist,
+  Banner,
 } = models;
 
 // Export individual models as named exports
@@ -83,6 +86,7 @@ export {
   ProductVariant,
   Review,
   Wishlist,
+  Banner,
 };
 
 // Default export

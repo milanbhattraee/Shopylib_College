@@ -76,6 +76,11 @@ export const couponApi = {
   getUserCoupons: (userId) => api.get(`/coupons/user/${userId}`).then((r) => r.data),
 };
 
+// ─── Banner API ───
+export const bannerApi = {
+  getActive: () => api.get("/banners/active").then((r) => r.data),
+};
+
 // ─── Search API ───
 export const searchApi = {
   products: (params) => api.get("/search/products", { params }).then((r) => r.data),
@@ -144,6 +149,16 @@ export const adminApi = {
   // Reviews
   getReviews: (params) => api.get("/reviews", { params }).then((r) => r.data),
   deleteReview: (id) => api.delete(`/reviews/${id}/admin`).then((r) => r.data),
+
+  // Banners
+  getBanners: () => api.get("/banners").then((r) => r.data),
+  getBanner: (id) => api.get(`/banners/${id}`).then((r) => r.data),
+  createBanner: (formData) =>
+    api.post("/banners", formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
+  updateBanner: (id, formData) =>
+    api.put(`/banners/${id}`, formData, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data),
+  deleteBanner: (id) => api.delete(`/banners/${id}`).then((r) => r.data),
+  toggleBanner: (id) => api.patch(`/banners/${id}/toggle`).then((r) => r.data),
 
   // Search
   searchUsers: (params) => api.get("/search/users", { params }).then((r) => r.data),

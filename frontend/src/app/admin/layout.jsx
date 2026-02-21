@@ -15,6 +15,8 @@ import {
   IoChevronForward,
   IoLogOutOutline,
   IoShieldCheckmarkOutline,
+  IoImageOutline,
+  IoStorefrontOutline,
 } from "react-icons/io5";
 import { useLogout } from "@/app/hooks/useAuth";
 
@@ -24,6 +26,7 @@ const navItems = [
   { href: "/admin/categories", label: "Categories", icon: IoLayersOutline },
   { href: "/admin/orders", label: "Orders", icon: IoCartOutline },
   { href: "/admin/coupons", label: "Coupons", icon: IoPricetagOutline },
+  { href: "/admin/banners", label: "Banners", icon: IoImageOutline },
   { href: "/admin/users", label: "Users", icon: IoPeopleOutline },
   { href: "/admin/reviews", label: "Reviews", icon: IoStarOutline },
 ];
@@ -129,6 +132,38 @@ export default function AdminLayout({ children }) {
 
       {/* Main Content */}
       <main className={`flex-1 transition-all duration-300 ${collapsed ? "ml-20" : "ml-64"}`}>
+        {/* Top Header Bar */}
+        <header className="sticky top-0 z-30 bg-white border-b border-gray-100 shadow-sm">
+          <div className="flex items-center justify-between px-6 h-14">
+            <div className="flex items-center gap-2">
+              <IoShieldCheckmarkOutline className="text-blue-500" size={18} />
+              <span className="text-sm font-semibold text-gray-700">Admin Panel</span>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <Link
+                href="/"
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors"
+              >
+                <IoStorefrontOutline size={16} />
+                Switch to Buyer
+              </Link>
+              
+              <div className="w-px h-6 bg-gray-200" />
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white text-xs font-bold">
+                  {user.firstName?.charAt(0)?.toUpperCase() || "A"}
+                </div>
+                {!collapsed && (
+                  <span className="text-sm font-medium text-gray-700 hidden sm:block">
+                    {user.firstName}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </header>
+
         <div className="p-6 max-w-7xl mx-auto">{children}</div>
       </main>
     </div>

@@ -1,7 +1,8 @@
 "use client";
 import React, { useState, useMemo } from "react";
 import Link from "next/link";
-import { FaHeart, FaRegHeart, FaShoppingCart } from "react-icons/fa";
+import { useRouter } from "next/navigation";
+import { FaHeart, FaRegHeart, FaShoppingCart, FaBolt } from "react-icons/fa";
 import { FiTruck, FiShield, FiRefreshCw } from "react-icons/fi";
 import { useAuth } from "@/app/provider/AuthProvider";
 import { useRelatedProducts } from "@/app/hooks/useProducts";
@@ -19,12 +20,14 @@ const labelClass =
 
 export default function ProductDetailClient({ product }) {
   const { user, isAuthenticated } = useAuth();
+  const router = useRouter();
   const [selectedImage, setSelectedImage] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [reviewText, setReviewText] = useState("");
   const [reviewRating, setReviewRating] = useState(0);
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [isBuyingNow, setIsBuyingNow] = useState(false);
 
   const { data: relatedData } = useRelatedProducts(product?.id);
   const addToCart = useAddToCart();
@@ -58,6 +61,29 @@ export default function ProductDetailClient({ product }) {
       quantity,
       ...(currentVariant && { variantId: currentVariant.id }),
     });
+  };
+
+  const handleBuyNow = () => {
+    if (!isAuthenticated) {
+      router.push("/auth/login");
+      return;
+    }
+    setIsBuyingNow(true);
+    addToCart.mutate(
+      {
+        productId: product.id,
+        quantity,
+        ...(currentVariant && { variantId: currentVariant.id }),
+      },
+      {
+        onSuccess: () => {
+          router.push("/checkout");
+        },
+        onError: () => {
+          setIsBuyingNow(false);
+        },
+      }
+    );
   };
 
   const handleWishlist = () => {
@@ -207,7 +233,15 @@ export default function ProductDetailClient({ product }) {
                 className={`${btnClass} flex-1`}
               >
                 <FaShoppingCart className="w-4 h-4" />
-                {addToCart.isPending ? "Adding..." : "Add to Cart"}
+                {addToCart.isPending && !isBuyingNow ? "Adding..." : "Add to Cart"}
+              </button>
+              <button
+                onClick={handleBuyNow}
+                disabled={!inStock || isBuyingNow}
+                className="cursor-pointer flex items-center justify-center gap-2 flex-1 h-12 text-white px-8 rounded-lg font-semibold transition-all disabled:opacity-50 bg-orange-500 border-orange-600 border-b-[4px] hover:brightness-110 hover:-translate-y-[1px] hover:border-b-[6px] active:border-b-[2px] active:brightness-90 active:translate-y-[2px]"
+              >
+                <FaBolt className="w-4 h-4" />
+                {isBuyingNow ? "Redirecting..." : "Buy Now"}
               </button>
               {isAuthenticated && (
                 <button

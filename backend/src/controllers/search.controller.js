@@ -185,11 +185,24 @@ export const searchProducts = async (req, res) => {
     return combinedScore >= threshold ? combinedScore : 0;
   };
 
-  const { q } = req.query;
+  const {
+    q,
+    page = 1,
+    limit = 12,
+    sortBy = "relevance",
+    sortOrder = "DESC",
+    category,
+    minPrice,
+    maxPrice,
+    inStock,
+  } = req.query;
 
   if (!q) {
     return res.status(400).json({ message: "Search query 'q' is required" });
   }
+
+  const pageNum = Math.max(1, parseInt(page));
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit)));
 
   try {
     // Extract meaningful search terms
@@ -197,7 +210,14 @@ export const searchProducts = async (req, res) => {
     const originalQuery = preprocessText(q);
 
     if (searchTerms.length === 0) {
-      return res.json([]);
+      return res.json({
+        success: true,
+        data: {
+          products: [],
+          pagination: { currentPage: 1, totalPages: 0, totalItems: 0, itemsPerPage: limitNum, hasNextPage: false, hasPrevPage: false },
+          filters: { categories: [], priceRange: { min: 0, max: 0 }, totalBeforeFilters: 0 },
+        },
+      });
     }
 
     // Build dynamic search conditions
@@ -228,24 +248,35 @@ export const searchProducts = async (req, res) => {
     // 4. PostgreSQL full-text search (if available)
     try {
       searchConditions.push(
-        literal(
-          `to_tsvector('english', name || ' ' || COALESCE(description, '') || ' ' || COALESCE(short_description, '')) @@ plainto_tsquery('english', '${originalQuery.replace(
-            /'/g,
-            "''"
-          )}')`
+        sequelize.literal(
+          `to_tsvector('english', "Product"."name" || ' ' || COALESCE("Product"."description", '') || ' ' || COALESCE("Product"."shortDescription", '')) @@ plainto_tsquery('english', ${sequelize.escape(originalQuery)})`
         )
       );
     } catch (err) {
       // Fallback if full-text search is not available
-      console.log("Full-text search not available, using fallback");
     }
 
-    // Get products with broad search
+    // Get products with broad search — only active products
     const products = await Product.findAll({
       where: {
+        isActive: true,
         [Op.or]: searchConditions,
       },
-      limit: 200, // Get more for better ranking
+      include: [
+        {
+          model: Category,
+          as: "category",
+          attributes: ["id", "name", "slug"],
+        },
+        {
+          model: ProductVariant,
+          as: "variants",
+          where: { isActive: true },
+          required: false,
+          attributes: ["id", "name", "price", "comparePrice", "stockQuantity", "attributes", "images"],
+        },
+      ],
+      limit: 200,
       order: [["createdAt", "DESC"]],
     });
 
@@ -256,13 +287,9 @@ export const searchProducts = async (req, res) => {
 
       const productName = preprocessText(productData.name || "");
       const productDesc = preprocessText(productData.description || "");
-      const productShortDesc = preprocessText(
-        productData.shortDescription || ""
-      );
+      const productShortDesc = preprocessText(productData.shortDescription || "");
       const productSku = preprocessText(productData.sku || "");
-      const productTags = (productData.tags || []).map((tag) =>
-        preprocessText(tag)
-      );
+      const productTags = (productData.tags || []).map((tag) => preprocessText(tag));
 
       // 1. Exact query match (highest score)
       if (productName.includes(originalQuery)) score += 1000;
@@ -272,39 +299,21 @@ export const searchProducts = async (req, res) => {
 
       // 2. Individual term matching with TF-IDF-like scoring
       searchTerms.forEach((term, index) => {
-        const termWeight = 1 / (index + 1); // Earlier terms have higher weight
-
-        // Name matching (highest weight)
+        const termWeight = 1 / (index + 1);
         const nameMatch = fuzzyMatch(term, productName);
-        if (nameMatch > 0) {
-          score += nameMatch * 500 * termWeight;
-        }
-
-        // SKU matching
+        if (nameMatch > 0) score += nameMatch * 500 * termWeight;
         const skuMatch = fuzzyMatch(term, productSku);
-        if (skuMatch > 0) {
-          score += skuMatch * 400 * termWeight;
-        }
-
-        // Short description matching
+        if (skuMatch > 0) score += skuMatch * 400 * termWeight;
         const shortDescMatch = fuzzyMatch(term, productShortDesc);
-        if (shortDescMatch > 0) {
-          score += shortDescMatch * 300 * termWeight;
-        }
-
-        // Description matching (with TF consideration)
+        if (shortDescMatch > 0) score += shortDescMatch * 300 * termWeight;
         const descMatch = fuzzyMatch(term, productDesc);
         if (descMatch > 0) {
           const tf = calculateTermFrequency(term, productDesc);
           score += descMatch * 200 * termWeight * (1 + tf);
         }
-
-        // Tag matching
         productTags.forEach((tag) => {
           const tagMatch = fuzzyMatch(term, tag);
-          if (tagMatch > 0) {
-            score += tagMatch * 250 * termWeight;
-          }
+          if (tagMatch > 0) score += tagMatch * 250 * termWeight;
         });
       });
 
@@ -315,10 +324,7 @@ export const searchProducts = async (req, res) => {
           productShortDesc.includes(term) ||
           productSku.includes(term)
       ).length;
-
-      if (matchedTermsCount > 1) {
-        score += (matchedTermsCount - 1) * 100;
-      }
+      if (matchedTermsCount > 1) score += (matchedTermsCount - 1) * 100;
 
       // 4. Completeness boost
       if (searchTerms.length > 1) {
@@ -327,42 +333,96 @@ export const searchProducts = async (req, res) => {
       }
 
       // 5. Recency boost (slight)
-      const daysSinceCreated =
-        (new Date() - new Date(productData.createdAt)) / (1000 * 60 * 60 * 24);
+      const daysSinceCreated = (new Date() - new Date(productData.createdAt)) / (1000 * 60 * 60 * 24);
       if (daysSinceCreated < 30) score += 10;
       if (daysSinceCreated < 7) score += 20;
 
-      return {
-        ...productData,
-        relevanceScore: Math.round(score),
-        matchedTerms: matchedTermsCount,
-        searchTerms: searchTerms, // For debugging
-      };
+      return { ...productData, _relevanceScore: Math.round(score), _matchedTerms: matchedTermsCount };
     });
 
-    // Sort by relevance and filter low scores
-    const sortedProducts = scoredProducts
-      .filter((product) => product.relevanceScore > 0)
-      .sort((a, b) => {
-        // Primary sort by score
-        if (b.relevanceScore !== a.relevanceScore) {
-          return b.relevanceScore - a.relevanceScore;
-        }
-        // Secondary sort by matched terms count
-        if (b.matchedTerms !== a.matchedTerms) {
-          return b.matchedTerms - a.matchedTerms;
-        }
-        // Tertiary sort by creation date
+    // Filter out zero-score products
+    const relevantProducts = scoredProducts.filter((p) => p._relevanceScore > 0);
+
+    // ── Compute filter metadata BEFORE applying user filters ──
+    const categoryMap = {};
+    let globalMinPrice = Infinity;
+    let globalMaxPrice = 0;
+    relevantProducts.forEach((p) => {
+      const price = parseFloat(p.price);
+      if (price < globalMinPrice) globalMinPrice = price;
+      if (price > globalMaxPrice) globalMaxPrice = price;
+      if (p.category) {
+        const cid = p.category.id;
+        if (!categoryMap[cid]) categoryMap[cid] = { id: cid, name: p.category.name, slug: p.category.slug, count: 0 };
+        categoryMap[cid].count++;
+      }
+    });
+    const filtersMeta = {
+      categories: Object.values(categoryMap).sort((a, b) => b.count - a.count),
+      priceRange: { min: globalMinPrice === Infinity ? 0 : Math.floor(globalMinPrice), max: Math.ceil(globalMaxPrice) },
+      totalBeforeFilters: relevantProducts.length,
+    };
+
+    // ── Apply user filters ──
+    let filtered = relevantProducts;
+
+    if (category) {
+      filtered = filtered.filter((p) => p.category && p.category.id === category);
+    }
+    if (minPrice) {
+      const min = parseFloat(minPrice);
+      filtered = filtered.filter((p) => parseFloat(p.price) >= min);
+    }
+    if (maxPrice) {
+      const max = parseFloat(maxPrice);
+      filtered = filtered.filter((p) => parseFloat(p.price) <= max);
+    }
+    if (inStock === "true") {
+      filtered = filtered.filter((p) => p.stockQuantity > 0);
+    }
+
+    // ── Sorting ──
+    if (sortBy === "relevance" || !sortBy) {
+      filtered.sort((a, b) => {
+        if (b._relevanceScore !== a._relevanceScore) return b._relevanceScore - a._relevanceScore;
+        if (b._matchedTerms !== a._matchedTerms) return b._matchedTerms - a._matchedTerms;
         return new Date(b.createdAt) - new Date(a.createdAt);
-      })
-      .slice(0, 50);
+      });
+    } else if (sortBy === "price") {
+      const dir = sortOrder === "ASC" ? 1 : -1;
+      filtered.sort((a, b) => dir * (parseFloat(a.price) - parseFloat(b.price)));
+    } else if (sortBy === "createdAt") {
+      const dir = sortOrder === "ASC" ? 1 : -1;
+      filtered.sort((a, b) => dir * (new Date(a.createdAt) - new Date(b.createdAt)));
+    } else if (sortBy === "name") {
+      const dir = sortOrder === "ASC" ? 1 : -1;
+      filtered.sort((a, b) => dir * a.name.localeCompare(b.name));
+    }
 
-    // Clean up response (remove debug info)
-    const finalResults = sortedProducts.map(
-      ({ relevanceScore, matchedTerms, searchTerms, ...product }) => product
-    );
+    // ── Pagination ──
+    const totalItems = filtered.length;
+    const totalPages = Math.ceil(totalItems / limitNum);
+    const offset = (pageNum - 1) * limitNum;
+    const paginatedProducts = filtered.slice(offset, offset + limitNum);
 
-    res.json(finalResults);
+    // Clean up internal scoring fields
+    const finalProducts = paginatedProducts.map(({ _relevanceScore, _matchedTerms, ...product }) => product);
+
+    res.json({
+      success: true,
+      data: {
+        products: finalProducts,
+        pagination: {
+          currentPage: pageNum,
+          totalPages,
+          totalItems,
+          itemsPerPage: limitNum,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1,
+        },
+        filters: filtersMeta,
+      },
+    });
   } catch (error) {
     console.error("Error searching products:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -450,16 +510,16 @@ export const getProductSearchSuggestions = async (req, res) => {
         [
           sequelize.literal(`
             CASE 
-              WHEN LOWER("Product"."name") = '${searchTerm.replace(/'/g, "''")}' THEN 0
-              WHEN LOWER("Product"."name") LIKE '${searchTerm.replace(/'/g, "''")}%' THEN 1
-              WHEN LOWER("Product"."sku") = '${searchTerm.replace(/'/g, "''")}' THEN 2
-              WHEN LOWER("Product"."sku") LIKE '${searchTerm.replace(/'/g, "''")}%' THEN 3
-              WHEN "Product"."isFeatured" = true AND LOWER("Product"."name") LIKE '%${searchTerm.replace(/'/g, "''")}%' THEN 4
-              WHEN LOWER("Product"."name") LIKE '%${searchTerm.replace(/'/g, "''")}%' THEN 5
-              WHEN array_to_string("Product"."tags", ' ') ILIKE '%${sanitizedQuery.replace(/'/g, "''")}%' THEN 6
-              WHEN LOWER("Product"."sku") LIKE '%${searchTerm.replace(/'/g, "''")}%' THEN 7
-              WHEN LOWER("Product"."shortDescription") LIKE '%${searchTerm.replace(/'/g, "''")}%' THEN 8
-              WHEN LOWER("Product"."metaTitle") LIKE '%${searchTerm.replace(/'/g, "''")}%' THEN 9
+              WHEN LOWER("Product"."name") = ${sequelize.escape(searchTerm)} THEN 0
+              WHEN LOWER("Product"."name") LIKE ${sequelize.escape(searchTerm + '%')} THEN 1
+              WHEN LOWER("Product"."sku") = ${sequelize.escape(searchTerm)} THEN 2
+              WHEN LOWER("Product"."sku") LIKE ${sequelize.escape(searchTerm + '%')} THEN 3
+              WHEN "Product"."isFeatured" = true AND LOWER("Product"."name") LIKE ${sequelize.escape('%' + searchTerm + '%')} THEN 4
+              WHEN LOWER("Product"."name") LIKE ${sequelize.escape('%' + searchTerm + '%')} THEN 5
+              WHEN array_to_string("Product"."tags", ' ') ILIKE ${sequelize.escape('%' + sanitizedQuery + '%')} THEN 6
+              WHEN LOWER("Product"."sku") LIKE ${sequelize.escape('%' + searchTerm + '%')} THEN 7
+              WHEN LOWER("Product"."shortDescription") LIKE ${sequelize.escape('%' + searchTerm + '%')} THEN 8
+              WHEN LOWER("Product"."metaTitle") LIKE ${sequelize.escape('%' + searchTerm + '%')} THEN 9
               ELSE 10
             END
           `),

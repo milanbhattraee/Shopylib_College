@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { adminApi } from "@/app/lib/api";
+import { adminApi, bannerApi } from "@/app/lib/api";
 import { toast } from "react-toastify";
 
 // ─── Products ───
@@ -321,3 +321,58 @@ export const useSearchReviews = (q) =>
     queryFn: () => adminApi.searchReviews({ q }),
     enabled: !!q && q.length >= 2,
   });
+
+// ─── Banners ───
+export const useAdminBanners = () =>
+  useQuery({
+    queryKey: ["admin-banners"],
+    queryFn: () => adminApi.getBanners(),
+  });
+
+export const useCreateBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (formData) => adminApi.createBanner(formData),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-banners"] });
+      toast.success("Banner created successfully");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to create banner"),
+  });
+};
+
+export const useUpdateBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, formData }) => adminApi.updateBanner(id, formData),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-banners"] });
+      toast.success("Banner updated successfully");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to update banner"),
+  });
+};
+
+export const useDeleteBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => adminApi.deleteBanner(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-banners"] });
+      toast.success("Banner deleted");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to delete banner"),
+  });
+};
+
+export const useToggleBanner = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id) => adminApi.toggleBanner(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-banners"] });
+      toast.success("Banner status updated");
+    },
+    onError: (e) => toast.error(e.response?.data?.message || "Failed to toggle banner"),
+  });
+};
